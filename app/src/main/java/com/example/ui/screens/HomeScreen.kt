@@ -24,7 +24,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,6 +60,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +68,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -80,10 +83,15 @@ import com.example.model.HomePageCommandType
 import com.example.model.PlacedHomeApp
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
+import com.example.ui.components.AppContextMenuDropdown
+import com.example.ui.components.AppContextMenuHost
 import com.example.ui.components.AppIconImage
 import com.example.ui.components.AppIconTile
+import com.example.ui.components.HomeEmptyMenuPopup
 import com.example.ui.components.PageIndicatorDots
 import com.example.ui.components.RESIZE_HANDLE_MARGIN_DP
+import com.example.ui.components.WidgetContextMenuDropdown
+import com.example.ui.components.WidgetContextMenuHost
 import com.example.ui.components.WidgetResizeFrameOverlay
 import com.example.widget.WidgetHostController
 import kotlinx.coroutines.delay
@@ -163,11 +171,12 @@ fun HomeScreen(
     homePageCommand: HomePageCommand?,
     resizingWidgetId: Int?,
     widgetHostController: WidgetHostController,
+    appMenuHost: AppContextMenuHost,
+    widgetMenuHost: WidgetContextMenuHost,
+    homeEmptyMenuAnchor: Offset?,
     onHomePageChanged: (Int) -> Unit,
     onAppClick: (AppItem) -> Unit,
-    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
     onAppSwipe: (AppItem, SwipeDirection, AppActionOrigin) -> Unit,
-    onWidgetLongClick: (PlacedWidget, Rect?) -> Unit,
     onResizeWidget: (Int, Int, Int, Int, Int) -> Unit,
     onDismissResizeWidget: () -> Unit,
     onMoveHomeAppToCell: (String, Int, Int, Int, Int) -> Unit,
@@ -176,6 +185,13 @@ fun HomeScreen(
     onMoveWidgetToNewPage: (Int, Boolean, Int, Int) -> Unit,
     onHomeSwipe: (SwipeDirection) -> Unit,
     onEmptyLongPress: (Offset) -> Unit,
+    onEmptyMenuAddWidget: () -> Unit,
+    onEmptyMenuOpenWallpaper: () -> Unit,
+    onEmptyMenuOpenSettings: () -> Unit,
+    onEmptyMenuAddPageAtStart: () -> Unit,
+    onEmptyMenuAddPageAtEnd: () -> Unit,
+    onEmptyMenuDeleteCurrentPage: () -> Unit,
+    onDismissEmptyMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -195,14 +211,12 @@ fun HomeScreen(
     val currentOnMoveWidgetToNewPage by rememberUpdatedState(onMoveWidgetToNewPage)
 
     var dragSession by remember { mutableStateOf<HomeDragSession?>(null) }
-    var isWidgetLongPressArmed by remember { mutableStateOf(false) }
     val isResizingWidget by rememberUpdatedState(resizingWidgetId != null)
     val isDraggingItem by rememberUpdatedState(dragSession != null)
 
     BackHandler(enabled = resizingWidgetId != null || dragSession != null) {
         if (dragSession != null) {
             dragSession = null
-            isWidgetLongPressArmed = false
         } else {
             currentOnDismissResizeWidget()
         }
@@ -339,7 +353,6 @@ fun HomeScreen(
     }
 
     fun finishDrag(pointerWindowPos: Offset) {
-        isWidgetLongPressArmed = false
         val prev = dragSession ?: return
         val activePage = if (isTemporaryNewPage(prev.targetPage)) prev.targetPage else currentDisplayedRealPage
         val finalSession = evaluateDropTarget(
@@ -495,8 +508,7 @@ fun HomeScreen(
                     onLongPress = { localOffset ->
                         if (!isResizingWidget && !isDraggingItem && !pressStartedOnChild) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val rootOffset = rootCoordsRef.coords?.takeIf { it.isAttached }?.positionInWindow() ?: Offset.Zero
-                            currentOnEmptyLongPress(rootOffset + localOffset)
+                            currentOnEmptyLongPress(localOffset)
                         }
                     },
                 )
@@ -719,7 +731,7 @@ fun HomeScreen(
                     ) {
                         HorizontalPager(
                             state = pagerState,
-                            userScrollEnabled = resizingWidgetId == null && dragSession == null && !isWidgetLongPressArmed,
+                            userScrollEnabled = resizingWidgetId == null && dragSession == null,
                             beyondViewportPageCount = if (dragSession != null) (pageCount - 1).coerceAtLeast(1) else 1,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -732,23 +744,26 @@ fun HomeScreen(
                             val pageApps = homePageApps.getOrElse(realPage) { emptyList() }
                             val pageWidgets = homePageWidgets.getOrElse(realPage) { emptyList() }
 
-                            // In a 2-page infinite loop, both (currentPage - 1) and (currentPage + 1) map to the same realPage.
-                            // derivedStateOf ensures recomposition only happens when the swipe direction flips, never per pixel.
+                            // In an infinite-loop pager (for ANY pageCount >= 2), multiple virtual pages can share the same
+                            // realPage simultaneously (during swipes, beyondViewport preloading, or drags).
+                            // Half-open interval [-pageCount/2, +pageCount/2) guarantees EXACTLY ONE virtual copy of each
+                            // realPage owns the single AppWidgetHostView at all times — zero stealing when wrapping last->first.
                             val isPreferredWidgetSlot by remember(virtualPage, loopEnabled, pageCount, pagerState) {
                                 derivedStateOf {
-                                    if (!loopEnabled || pageCount != 2) {
+                                    if (!loopEnabled) {
                                         true
                                     } else {
-                                        val current = pagerState.currentPage
-                                        val offset = pagerState.currentPageOffsetFraction
-                                        when (virtualPage) {
-                                            current -> true
-                                            current - 1 -> offset < 0f
-                                            current + 1 -> offset >= 0f
-                                            else -> false
-                                        }
+                                        // Subtract Int indices FIRST before converting to Float:
+                                        // virtualPage is near Int.MAX_VALUE / 2 (~1e9), where 32-bit Float ULP is 128.0!
+                                        val delta = (virtualPage - pagerState.currentPage).toFloat() -
+                                            pagerState.currentPageOffsetFraction
+                                        val half = pageCount / 2f
+                                        delta >= -half && delta < half
                                     }
                                 }
+                            }
+                            val isCurrentVirtualPage by remember(virtualPage, pagerState) {
+                                derivedStateOf { virtualPage == pagerState.currentPage }
                             }
 
                             val draggedItem = dragSession?.item
@@ -761,12 +776,15 @@ fun HomeScreen(
                                 pageApps = pageApps,
                                 pageWidgets = pageWidgets,
                                 isPreferredWidgetSlot = isPreferredWidgetSlot,
+                                isCurrentVirtualPage = isCurrentVirtualPage,
                                 resizingWidgetId = resizingWidgetId,
                                 draggedAppKey = draggedAppKey,
                                 draggedWidgetId = draggedWidgetId,
                                 cols = homeGridColumns,
                                 appGestures = appGestures,
                                 widgetHostController = widgetHostController,
+                                appMenuHost = appMenuHost,
+                                widgetMenuHost = widgetMenuHost,
                                 onResizingWidgetBoundsChanged = { bounds ->
                                     resizingWidgetBounds = bounds
                                 },
@@ -783,28 +801,15 @@ fun HomeScreen(
                                     }
                                     lastInteractiveTouchDownMs = System.currentTimeMillis()
                                 },
-                                onWidgetLongPressArmed = {
-                                    lastIconBoundDirs = SwipeDirection.entries.toSet()
-                                    isWidgetLongPressArmed = true
-                                },
                                 onAppClick = onAppClick,
-                                onAppLongClick = onAppLongClick,
                                 onAppSwipe = onAppSwipe,
-                                onAppDragStart = { slot, bounds, pos -> startDrag(DragItem.App(slot), bounds, pos) },
+                                onAppDragStart = { slot, bounds, pos ->
+                                    appMenuHost.onDismiss()
+                                    startDrag(DragItem.App(slot), bounds, pos)
+                                },
                                 onAppDragMove = { pos -> updateDrag(pos) },
                                 onAppDragEnd = { pos -> finishDrag(pos) },
                                 onAppDragCancel = { dragSession = null },
-                                onWidgetLongClick = { widget, bounds ->
-                                    isWidgetLongPressArmed = false
-                                    onWidgetLongClick(widget, bounds)
-                                },
-                                onWidgetDragStart = { widget, bounds, pos -> startDrag(DragItem.Widget(widget), bounds, pos) },
-                                onWidgetDragMove = { pos -> updateDrag(pos) },
-                                onWidgetDragEnd = { pos -> finishDrag(pos) },
-                                onWidgetDragCancel = {
-                                    isWidgetLongPressArmed = false
-                                    dragSession = null
-                                },
                             )
                         }
 
@@ -859,24 +864,33 @@ fun HomeScreen(
                     dockApps.forEach { app ->
                         key(app.componentKey) {
                             val boundDirs = appGestures[app.componentKey]?.keys ?: emptySet()
-                            AppIconTile(
-                                app = app,
-                                boundDirections = boundDirs,
-                                showLabel = false,
-                                onWallpaper = true,
-                                iconSize = 50.dp,
-                                onDownPointer = { id, dirs ->
-                                    lastIconPointerId = id
-                                    lastIconBoundDirs = dirs
-                                    lastInteractiveTouchDownMs = System.currentTimeMillis()
-                                },
-                                onClick = { onAppClick(app) },
-                                onLongClick = { bounds ->
-                                    onAppLongClick(app, AppActionOrigin.DOCK, 0, bounds)
-                                },
-                                onSwipe = { dir -> onAppSwipe(app, dir, AppActionOrigin.DOCK) },
-                                modifier = Modifier.weight(1f),
-                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                AppIconTile(
+                                    app = app,
+                                    boundDirections = boundDirs,
+                                    showLabel = false,
+                                    onWallpaper = true,
+                                    iconSize = 50.dp,
+                                    onDownPointer = { id, dirs ->
+                                        lastIconPointerId = id
+                                        lastIconBoundDirs = dirs
+                                        lastInteractiveTouchDownMs = System.currentTimeMillis()
+                                    },
+                                    onClick = { onAppClick(app) },
+                                    onLongClick = {
+                                        appMenuHost.onOpen(app, AppActionOrigin.DOCK, 0)
+                                    },
+                                    onSwipe = { dir -> onAppSwipe(app, dir, AppActionOrigin.DOCK) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                AppContextMenuDropdown(
+                                    app = app,
+                                    origin = AppActionOrigin.DOCK,
+                                    sourcePageIndex = 0,
+                                    expanded = appMenuHost.isExpandedFor(app, AppActionOrigin.DOCK, 0),
+                                    host = appMenuHost,
+                                )
+                            }
                         }
                     }
                 }
@@ -907,14 +921,36 @@ fun HomeScreen(
         // Top-level AOSP DragLayer-equivalent resize frame overlay (zero handle clipping & clean outside-tap dismiss)
         // Kept mounted (hidden via alpha) during interior drag so the active pointer stream is never cancelled.
         val activeWidget = resizingWidget
+        val hasGridMetrics = pageGridMetrics.gridBounds != Rect.Zero
         val activeBounds = resizingWidgetBounds
-        if (activeWidget != null && activeBounds != null) {
+        if (activeWidget != null && (hasGridMetrics || activeBounds != null)) {
             val rootPos = rootCoordsRef.coords?.takeIf { it.isAttached }?.positionInWindow() ?: Offset.Zero
             val marginPx = with(density) { RESIZE_HANDLE_MARGIN_DP.dp.toPx() }
-            val frameLeftPx = (activeBounds.left - rootPos.x - marginPx).roundToInt()
-            val frameTopPx = (activeBounds.top - rootPos.y - marginPx).roundToInt()
-            val frameWidthDp = with(density) { (activeBounds.width + marginPx * 2f).toDp() }
-            val frameHeightDp = with(density) { (activeBounds.height + marginPx * 2f).toDp() }
+            val widgetRectInRoot = if (hasGridMetrics) {
+                val safeCols = homeGridColumns.coerceIn(4, 5)
+                val rows = HomeGridEngine.HOME_GRID_ROWS
+                val sx = activeWidget.spanX.coerceIn(1, safeCols)
+                val sy = activeWidget.spanY.coerceIn(1, rows)
+                val cx = activeWidget.cellX.coerceIn(0, (safeCols - sx).coerceAtLeast(0))
+                val cy = activeWidget.cellY.coerceIn(0, (rows - sy).coerceAtLeast(0))
+                val left = pageGridMetrics.gridBounds.left - rootPos.x + cx * pageGridMetrics.colStepPx
+                val top = pageGridMetrics.gridBounds.top - rootPos.y + cy * pageGridMetrics.rowStepPx
+                val w = sx * pageGridMetrics.cellWidthPx + (sx - 1) * pageGridMetrics.colGapPx
+                val h = sy * pageGridMetrics.cellHeightPx + (sy - 1) * pageGridMetrics.rowGapPx
+                Rect(left = left, top = top, right = left + w, bottom = top + h)
+            } else {
+                val b = activeBounds!!
+                Rect(
+                    left = b.left - rootPos.x,
+                    top = b.top - rootPos.y,
+                    right = b.right - rootPos.x,
+                    bottom = b.bottom - rootPos.y,
+                )
+            }
+            val frameLeftPx = (widgetRectInRoot.left - marginPx).roundToInt()
+            val frameTopPx = (widgetRectInRoot.top - marginPx).roundToInt()
+            val frameWidthPx = (widgetRectInRoot.width + marginPx * 2f).roundToInt().coerceAtLeast(1)
+            val frameHeightPx = (widgetRectInRoot.height + marginPx * 2f).roundToInt().coerceAtLeast(1)
             val resizeSpec = remember(activeWidget.appWidgetId, homeGridColumns) {
                 widgetHostController.getResizeSpec(activeWidget.appWidgetId, homeGridColumns)
             }
@@ -952,6 +988,8 @@ fun HomeScreen(
                             },
                     )
                 }
+                // Measure with unbounded exact Constraints.fixed so full-width/full-height widgets
+                // (whose outer handle margin exceeds screen width) are never clamped or shifted left.
                 WidgetResizeFrameOverlay(
                     widget = activeWidget,
                     spec = resizeSpec,
@@ -966,18 +1004,39 @@ fun HomeScreen(
                     onUpdateRect = { cx, cy, sx, sy ->
                         onResizeWidget(activeWidget.appWidgetId, cx, cy, sx, sy)
                     },
+                    onTapToDismiss = currentOnDismissResizeWidget,
                     onInteriorDragStart = { bounds, pos ->
                         startDrag(DragItem.Widget(activeWidget), bounds, pos, keepResizeMode = true)
                     },
                     onInteriorDragMove = { pos -> updateDrag(pos) },
                     onInteriorDragEnd = { pos -> finishDrag(pos) },
                     onInteriorDragCancel = { dragSession = null },
-                    modifier = Modifier
-                        .offset { IntOffset(frameLeftPx, frameTopPx) }
-                        .size(width = frameWidthDp, height = frameHeightDp),
+                    modifier = Modifier.layout { measurable, constraints ->
+                        val placeable = measurable.measure(
+                            Constraints.fixed(frameWidthPx, frameHeightPx)
+                        )
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            placeable.place(frameLeftPx, frameTopPx)
+                        }
+                    },
                 )
             }
         }
+
+        // Empty-space long-press menu anchored directly at the local tap coordinate
+        HomeEmptyMenuPopup(
+            anchorOffset = homeEmptyMenuAnchor,
+            canAddPage = pageCount < maxHomePages,
+            canDeleteCurrentPage = pageCount > 1,
+            onAddWidget = onEmptyMenuAddWidget,
+            onOpenWallpaper = onEmptyMenuOpenWallpaper,
+            onOpenSettings = onEmptyMenuOpenSettings,
+            onAddPageAtStart = onEmptyMenuAddPageAtStart,
+            onAddPageAtEnd = onEmptyMenuAddPageAtEnd,
+            onDeleteCurrentPage = onEmptyMenuDeleteCurrentPage,
+            onDismiss = onDismissEmptyMenu,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
     }
 }
 
@@ -1131,28 +1190,24 @@ private fun HomePageContent(
     pageApps: List<HomeAppSlot>,
     pageWidgets: List<PlacedWidget>,
     isPreferredWidgetSlot: Boolean,
+    isCurrentVirtualPage: Boolean,
     resizingWidgetId: Int?,
     draggedAppKey: String?,
     draggedWidgetId: Int?,
     cols: Int,
     appGestures: Map<String, Map<SwipeDirection, String>>,
     widgetHostController: WidgetHostController,
+    appMenuHost: AppContextMenuHost,
+    widgetMenuHost: WidgetContextMenuHost,
     onResizingWidgetBoundsChanged: (Rect) -> Unit,
     onIconDownPointer: (Long, Set<SwipeDirection>) -> Unit,
     onWidgetTouchDown: (Long?) -> Unit,
-    onWidgetLongPressArmed: () -> Unit,
     onAppClick: (AppItem) -> Unit,
-    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
     onAppSwipe: (AppItem, SwipeDirection, AppActionOrigin) -> Unit,
     onAppDragStart: (HomeAppSlot, Rect, Offset) -> Unit,
     onAppDragMove: (Offset) -> Unit,
     onAppDragEnd: (Offset) -> Unit,
     onAppDragCancel: () -> Unit,
-    onWidgetLongClick: (PlacedWidget, Rect?) -> Unit,
-    onWidgetDragStart: (PlacedWidget, Rect, Offset) -> Unit,
-    onWidgetDragMove: (Offset) -> Unit,
-    onWidgetDragEnd: (Offset) -> Unit,
-    onWidgetDragCancel: () -> Unit,
 ) {
     val density = LocalDensity.current
     val rows = HomeGridEngine.HOME_GRID_ROWS
@@ -1177,11 +1232,8 @@ private fun HomePageContent(
             when {
                 isLoading -> {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(26.dp),
-                        )
+                        @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                        LoadingIndicator(color = Color.White)
                     }
                 }
 
@@ -1231,17 +1283,20 @@ private fun HomePageContent(
                                 HomeWidgetSlot(
                                     widget = widget,
                                     isPreferredSlot = isPreferredWidgetSlot,
+                                    isCurrentVirtualPage = isCurrentVirtualPage,
                                     isResizing = isResizing,
                                     isBeingDragged = isBeingDragged,
                                     widgetHostController = widgetHostController,
                                     onResizingBoundsChanged = onResizingWidgetBoundsChanged,
                                     onTouchDown = onWidgetTouchDown,
-                                    onLongPressArmed = onWidgetLongPressArmed,
-                                    onLongClick = { bounds -> onWidgetLongClick(widget, bounds) },
-                                    onDragStart = { bounds, pos -> onWidgetDragStart(widget, bounds, pos) },
-                                    onDragMove = onWidgetDragMove,
-                                    onDragEnd = onWidgetDragEnd,
-                                    onDragCancel = onWidgetDragCancel,
+                                    onLongClick = { widgetMenuHost.onOpen(widget) },
+                                )
+                                WidgetContextMenuDropdown(
+                                    widget = widget,
+                                    expanded = isCurrentVirtualPage && widgetMenuHost.activeWidgetId == widget.appWidgetId,
+                                    cols = safeCols,
+                                    widgetHostController = widgetHostController,
+                                    host = widgetMenuHost,
                                 )
                             }
                         }
@@ -1257,6 +1312,7 @@ private fun HomePageContent(
                             val widthDp = with(density) { cellWidthPx.toDp() }
                             val boundDirs = appGestures[slot.app.componentKey]?.keys ?: emptySet()
                             val isBeingDragged = draggedAppKey == slot.app.componentKey
+                            var isPointerHeld by remember { mutableStateOf(false) }
 
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -1273,15 +1329,25 @@ private fun HomePageContent(
                                     iconSize = iconSize,
                                     onDownPointer = onIconDownPointer,
                                     onClick = { onAppClick(slot.app) },
-                                    onLongClick = { bounds ->
-                                        onAppLongClick(slot.app, AppActionOrigin.HOME, realPage, bounds)
+                                    onLongClick = {
+                                        appMenuHost.onOpen(slot.app, AppActionOrigin.HOME, realPage)
                                     },
+                                    onLongPressHoldChanged = { isPointerHeld = it },
                                     onSwipe = { dir -> onAppSwipe(slot.app, dir, AppActionOrigin.HOME) },
                                     onDragStart = { bounds, pos -> onAppDragStart(slot, bounds, pos) },
                                     onDragMove = onAppDragMove,
                                     onDragEnd = onAppDragEnd,
                                     onDragCancel = onAppDragCancel,
                                     modifier = Modifier.fillMaxSize(),
+                                )
+                                AppContextMenuDropdown(
+                                    app = slot.app,
+                                    origin = AppActionOrigin.HOME,
+                                    sourcePageIndex = realPage,
+                                    expanded = isCurrentVirtualPage &&
+                                        appMenuHost.isExpandedFor(slot.app, AppActionOrigin.HOME, realPage),
+                                    host = appMenuHost,
+                                    isPointerHeld = isPointerHeld,
                                 )
                             }
                         }
@@ -1296,26 +1362,17 @@ private fun HomePageContent(
 private fun HomeWidgetSlot(
     widget: PlacedWidget,
     isPreferredSlot: Boolean,
+    isCurrentVirtualPage: Boolean,
     isResizing: Boolean,
     isBeingDragged: Boolean,
     widgetHostController: WidgetHostController,
     onResizingBoundsChanged: (Rect) -> Unit,
     onTouchDown: (Long?) -> Unit,
-    onLongPressArmed: () -> Unit,
-    onLongClick: (Rect?) -> Unit,
-    onDragStart: (Rect, Offset) -> Unit,
-    onDragMove: (Offset) -> Unit,
-    onDragEnd: (Offset) -> Unit,
-    onDragCancel: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val currentOnTouchDown by rememberUpdatedState(onTouchDown)
-    val currentOnLongPressArmed by rememberUpdatedState(onLongPressArmed)
     val currentOnLongClick by rememberUpdatedState(onLongClick)
     val currentOnResizingBoundsChanged by rememberUpdatedState(onResizingBoundsChanged)
-    val currentOnDragStart by rememberUpdatedState(onDragStart)
-    val currentOnDragMove by rememberUpdatedState(onDragMove)
-    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
-    val currentOnDragCancel by rememberUpdatedState(onDragCancel)
     val slotCoordsRef = remember { LayoutCoordsRef() }
 
     val hasProvider = remember(widget.appWidgetId) {
@@ -1356,33 +1413,26 @@ private fun HomeWidgetSlot(
                         android.widget.FrameLayout(ctx).apply {
                             clipChildren = false
                             clipToPadding = false
-                            if (isPreferredSlot && !isBeingDragged) {
+                            if ((isPreferredSlot || isCurrentVirtualPage) && !isBeingDragged) {
                                 widgetHostController.attachViewToContainer(widget.appWidgetId, this)?.apply {
                                     onTouchDownListener = { currentOnTouchDown(null) }
-                                    onLongPressArmedListener = { currentOnLongPressArmed() }
-                                    onLongPressListener = { bounds -> currentOnLongClick(bounds) }
-                                    onDragStartListener = { bounds, pos -> currentOnDragStart(bounds, pos) }
-                                    onDragMoveListener = { pos -> currentOnDragMove(pos) }
-                                    onDragEndListener = { pos -> currentOnDragEnd(pos) }
-                                    onDragCancelListener = { currentOnDragCancel() }
+                                    onLongPressListener = { _ -> currentOnLongClick() }
                                     updateSizeDpIfNeeded(widthDp, heightDp)
                                 }
                             }
                         }
                     },
                     update = { container ->
-                        if (isPreferredSlot && !isBeingDragged) {
+                        if ((isPreferredSlot || isCurrentVirtualPage) && !isBeingDragged) {
                             widgetHostController.attachViewToContainer(widget.appWidgetId, container)?.apply {
                                 onTouchDownListener = { currentOnTouchDown(null) }
-                                onLongPressArmedListener = { currentOnLongPressArmed() }
-                                onLongPressListener = { bounds -> currentOnLongClick(bounds) }
-                                onDragStartListener = { bounds, pos -> currentOnDragStart(bounds, pos) }
-                                onDragMoveListener = { pos -> currentOnDragMove(pos) }
-                                onDragEndListener = { pos -> currentOnDragEnd(pos) }
-                                onDragCancelListener = { currentOnDragCancel() }
+                                onLongPressListener = { _ -> currentOnLongClick() }
                                 updateSizeDpIfNeeded(widthDp, heightDp)
                             }
                         }
+                    },
+                    onRelease = { container ->
+                        container.removeAllViews()
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1396,10 +1446,7 @@ private fun HomeWidgetSlot(
                     .clip(RoundedCornerShape(16.dp))
                     .pointerInput(widget.appWidgetId) {
                         detectTapGestures(
-                            onLongPress = {
-                                val bounds = slotCoordsRef.coords?.takeIf { it.isAttached }?.boundsInWindow()
-                                currentOnLongClick(bounds)
-                            },
+                            onLongPress = { currentOnLongClick() },
                         )
                     },
             ) {

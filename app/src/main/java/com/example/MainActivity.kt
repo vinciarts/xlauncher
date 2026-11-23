@@ -14,16 +14,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -49,12 +48,11 @@ import com.example.model.AppActionOrigin
 import com.example.model.LauncherDestination
 import com.example.model.PlacedWidget
 import com.example.model.WidgetCatalogItem
-import com.example.ui.components.AppContextMenuPopup
+import com.example.ui.components.AppContextMenuHost
 import com.example.ui.components.AppGestureConfigSheet
 import com.example.ui.components.AssignAppTabsDialog
-import com.example.ui.components.HomeEmptyMenuPopup
 import com.example.ui.components.MoveToPageDialog
-import com.example.ui.components.WidgetContextMenuPopup
+import com.example.ui.components.WidgetContextMenuHost
 import com.example.ui.screens.AppDrawerScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
@@ -320,6 +318,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LauncherRoot(
     viewModel: LauncherViewModel,
@@ -365,17 +364,63 @@ private fun LauncherRoot(
     }
 
     val isDrawerOpen = uiState.destination == LauncherDestination.DRAWER
+    val motionScheme = MaterialTheme.motionScheme
     val drawerProgressState = animateFloatAsState(
         targetValue = if (isDrawerOpen) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motionScheme.defaultSpatialSpec(),
         label = "drawer_progress",
     )
     // Only flips twice (on open start and close end) so layout never re-runs during GPU animation
     val isDrawerPlaced by remember {
         derivedStateOf { drawerProgressState.value > 0.001f }
+    }
+
+    val appMenuHost = remember(
+        uiState.appMenuTarget,
+        uiState.settings.dockKeys,
+        uiState.settings.appGestures,
+        uiState.appsByKey,
+        uiState.shortcutsByTargetKey,
+        uiState.hasShortcutHostPermission,
+    ) {
+        AppContextMenuHost(
+            activeTarget = uiState.appMenuTarget,
+            dockKeys = uiState.settings.dockKeys,
+            appGestures = uiState.settings.appGestures,
+            appsByKey = uiState.appsByKey,
+            shortcutsByTargetKey = uiState.shortcutsByTargetKey,
+            hasShortcutHostPermission = uiState.hasShortcutHostPermission,
+            hasWidgetsForPackage = widgetHostController::hasWidgetsForPackage,
+            onOpen = viewModel::openAppMenu,
+            onDismiss = viewModel::dismissAppMenu,
+            onLaunchShortcut = viewModel::launchShortcut,
+            onOpenDefaultHomeSettings = {
+                viewModel.dismissAppMenu()
+                viewModel.openDefaultHomeSettings()
+            },
+            onOpenLauncherSettings = viewModel::openSettings,
+            onOpenAppWidgets = { pkg -> viewModel.openWidgetPicker(pkg) },
+            onOpenGestureConfig = viewModel::openAppGestureConfig,
+            onPinToCurrentHomePage = viewModel::pinToCurrentHomePage,
+            onRemoveFromHomePage = viewModel::removeFromHomePage,
+            onOpenMovePage = viewModel::openMovePageDialog,
+            onOpenDrawerTabs = viewModel::openAppTabsDialog,
+            onTogglePinDock = viewModel::togglePinDock,
+            onAppInfo = viewModel::openAppInfo,
+            onUninstall = viewModel::uninstallApp,
+        )
+    }
+
+    val widgetMenuHost = remember(uiState.widgetMenuId) {
+        WidgetContextMenuHost(
+            activeWidgetId = uiState.widgetMenuId,
+            onOpen = viewModel::openWidgetMenu,
+            onDismiss = viewModel::dismissWidgetMenu,
+            onReconfigure = onReconfigureWidget,
+            onResize = viewModel::openResizeWidget,
+            onMovePage = viewModel::openMoveWidgetDialog,
+            onRemove = onDeleteWidget,
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -394,11 +439,12 @@ private fun LauncherRoot(
             homePageCommand = uiState.homePageCommand,
             resizingWidgetId = uiState.resizingWidgetId,
             widgetHostController = widgetHostController,
+            appMenuHost = appMenuHost,
+            widgetMenuHost = widgetMenuHost,
+            homeEmptyMenuAnchor = uiState.homeEmptyMenuAnchor,
             onHomePageChanged = viewModel::onHomePageChanged,
             onAppClick = viewModel::launchApp,
-            onAppLongClick = viewModel::openAppMenu,
             onAppSwipe = viewModel::onAppSwiped,
-            onWidgetLongClick = viewModel::openWidgetMenu,
             onResizeWidget = viewModel::resizeWidget,
             onDismissResizeWidget = viewModel::dismissResizeWidget,
             onMoveHomeAppToCell = viewModel::moveHomeAppToCell,
@@ -407,6 +453,17 @@ private fun LauncherRoot(
             onMoveWidgetToNewPage = viewModel::moveWidgetToNewPage,
             onHomeSwipe = viewModel::onHomeSwiped,
             onEmptyLongPress = viewModel::openHomeEmptyMenu,
+            onEmptyMenuAddWidget = { viewModel.openWidgetPicker() },
+            onEmptyMenuOpenWallpaper = viewModel::openWallpaperPicker,
+            onEmptyMenuOpenSettings = viewModel::openSettings,
+            onEmptyMenuAddPageAtStart = viewModel::insertHomePageAtStart,
+            onEmptyMenuAddPageAtEnd = viewModel::appendHomePageAtEnd,
+            onEmptyMenuDeleteCurrentPage = {
+                viewModel.deleteCurrentHomePage { removedIds ->
+                    removedIds.forEach { widgetId -> widgetHostController.deleteWidget(widgetId) }
+                }
+            },
+            onDismissEmptyMenu = viewModel::dismissHomeEmptyMenu,
         )
 
         // Layer 1: AppDrawer stays warm in memory once apps load; unplaced (0 draw / 0 touch cost) when closed,
@@ -444,7 +501,7 @@ private fun LauncherRoot(
                     onSearchQueryChange = viewModel::updateSearchQuery,
                     onAutoFocusConsumed = viewModel::clearAutoFocusSearch,
                     onAppClick = viewModel::launchApp,
-                    onAppLongClick = viewModel::openAppMenu,
+                    appMenuHost = appMenuHost,
                     onCreateTab = viewModel::createDrawerTab,
                     onRenameTab = viewModel::renameDrawerTab,
                     onSetTabApps = viewModel::setDrawerTabApps,
@@ -458,8 +515,8 @@ private fun LauncherRoot(
         // Layer 2: Settings overlay without destroying HomeScreen underneath
         AnimatedVisibility(
             visible = uiState.destination == LauncherDestination.SETTINGS,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(140)),
+            enter = fadeIn(motionScheme.fastEffectsSpec()),
+            exit = fadeOut(motionScheme.fastEffectsSpec()),
         ) {
             Box(
                 modifier = Modifier
@@ -489,8 +546,8 @@ private fun LauncherRoot(
         // Layer 3: Full-screen Material 3 Widget Picker (unmodified native LazyColumn scrolling)
         AnimatedVisibility(
             visible = isWidgetPickerOpen,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(140)),
+            enter = fadeIn(motionScheme.fastEffectsSpec()),
+            exit = fadeOut(motionScheme.fastEffectsSpec()),
         ) {
             Box(
                 modifier = Modifier
@@ -509,51 +566,6 @@ private fun LauncherRoot(
             }
         }
 
-        // Empty-space long-press floating popup (Widgets / Wallpaper / Home settings / Pages)
-        val emptyMenuAnchor = uiState.homeEmptyMenuAnchor
-        if (emptyMenuAnchor != null) {
-            HomeEmptyMenuPopup(
-                anchorOffset = emptyMenuAnchor,
-                canAddPage = uiState.settings.homePageCount < LauncherPreferencesRepository.MAX_HOME_PAGES,
-                canDeleteCurrentPage = uiState.settings.homePageCount > 1,
-                onAddWidget = { viewModel.openWidgetPicker() },
-                onOpenWallpaper = viewModel::openWallpaperPicker,
-                onOpenSettings = viewModel::openSettings,
-                onAddPageAtStart = viewModel::insertHomePageAtStart,
-                onAddPageAtEnd = viewModel::appendHomePageAtEnd,
-                onDeleteCurrentPage = {
-                    viewModel.deleteCurrentHomePage { removedIds ->
-                        removedIds.forEach { widgetId -> widgetHostController.deleteWidget(widgetId) }
-                    }
-                },
-                onDismiss = viewModel::dismissHomeEmptyMenu,
-            )
-        }
-
-        // Anchored native-style long-press popup for placed widgets
-        val widgetMenu = uiState.widgetMenuTarget
-        if (widgetMenu != null) {
-            val canReconfigure = remember(widgetMenu.widget.appWidgetId) {
-                widgetHostController.isReconfigurable(widgetMenu.widget.appWidgetId)
-            }
-            val canResize = remember(widgetMenu.widget.appWidgetId, uiState.settings.homeGridColumns) {
-                widgetHostController.getResizeSpec(
-                    widgetMenu.widget.appWidgetId,
-                    uiState.settings.homeGridColumns,
-                ).isResizable
-            }
-            WidgetContextMenuPopup(
-                target = widgetMenu,
-                canReconfigure = canReconfigure,
-                canResize = canResize,
-                onDismiss = viewModel::dismissWidgetMenu,
-                onReconfigure = { onReconfigureWidget(widgetMenu.widget) },
-                onResize = { viewModel.openResizeWidget(widgetMenu.widget) },
-                onMovePage = { viewModel.openMoveWidgetDialog(widgetMenu.widget) },
-                onRemove = { onDeleteWidget(widgetMenu.widget) },
-            )
-        }
-
         // Move widget to another Home page dialog
         val moveWidget = uiState.moveWidgetTarget
         if (moveWidget != null) {
@@ -564,40 +576,6 @@ private fun LauncherRoot(
                     viewModel.moveWidgetToPage(moveWidget.appWidgetId, targetPage)
                 },
                 onDismiss = viewModel::dismissMoveWidgetDialog,
-            )
-        }
-
-        // Anchored native-style long-press popup menu next to the pressed app icon
-        val menuTarget = uiState.appMenuTarget
-        if (menuTarget != null) {
-            val hasWidgets = remember(menuTarget.app.packageName) {
-                widgetHostController.hasWidgetsForPackage(menuTarget.app.packageName)
-            }
-            AppContextMenuPopup(
-                target = menuTarget,
-                isPinnedDock = menuTarget.app.componentKey in uiState.settings.dockKeys,
-                hasWidgets = hasWidgets,
-                appGestures = uiState.settings.appGestures[menuTarget.app.componentKey].orEmpty(),
-                appsByKey = uiState.appsByKey,
-                shortcutsByTargetKey = uiState.shortcutsByTargetKey,
-                appOwnShortcuts = uiState.activeAppMenuShortcuts,
-                hasShortcutHostPermission = uiState.hasShortcutHostPermission,
-                onDismiss = viewModel::dismissAppMenu,
-                onLaunchShortcut = viewModel::launchShortcut,
-                onOpenDefaultHomeSettings = {
-                    viewModel.dismissAppMenu()
-                    viewModel.openDefaultHomeSettings()
-                },
-                onOpenLauncherSettings = viewModel::openSettings,
-                onOpenAppWidgets = { viewModel.openWidgetPicker(menuTarget.app.packageName) },
-                onOpenGestureConfig = { viewModel.openAppGestureConfig(menuTarget.app) },
-                onPinToCurrentHomePage = { viewModel.pinToCurrentHomePage(menuTarget.app) },
-                onRemoveFromHomePage = { viewModel.removeFromHomePage(menuTarget.app, menuTarget.sourcePageIndex) },
-                onOpenMovePage = { viewModel.openMovePageDialog(menuTarget) },
-                onOpenDrawerTabs = { viewModel.openAppTabsDialog(menuTarget.app) },
-                onTogglePinDock = { viewModel.togglePinDock(menuTarget.app) },
-                onAppInfo = { viewModel.openAppInfo(menuTarget.app) },
-                onUninstall = { viewModel.uninstallApp(menuTarget.app) },
             )
         }
 

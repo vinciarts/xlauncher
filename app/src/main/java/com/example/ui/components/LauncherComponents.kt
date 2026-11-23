@@ -20,17 +20,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowRight
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dock
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -38,16 +36,19 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material.icons.rounded.Widgets
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.MenuItemColors
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,7 +70,6 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -80,8 +80,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import com.example.R
 import com.example.model.AppActionOrigin
 import com.example.model.AppItem
@@ -89,7 +89,6 @@ import com.example.model.AppMenuTarget
 import com.example.model.AppShortcutItem
 import com.example.model.SwipeDirection
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 private class CoordinatesHolder(var coords: LayoutCoordinates? = null)
 
@@ -146,7 +145,8 @@ fun AppIconTile(
     iconSize: Dp = 52.dp,
     onDownPointer: ((Long, Set<SwipeDirection>) -> Unit)? = null,
     onClick: () -> Unit,
-    onLongClick: (Rect?) -> Unit,
+    onLongClick: () -> Unit,
+    onLongPressHoldChanged: ((Boolean) -> Unit)? = null,
     onSwipe: (SwipeDirection) -> Unit,
     onDragStart: ((Rect, Offset) -> Unit)? = null,
     onDragMove: ((Offset) -> Unit)? = null,
@@ -169,6 +169,7 @@ fun AppIconTile(
     val currentOnDownPointer by rememberUpdatedState(onDownPointer)
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val currentOnLongPressHoldChanged by rememberUpdatedState(onLongPressHoldChanged)
     val currentOnSwipe by rememberUpdatedState(onSwipe)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val currentOnDragMove by rememberUpdatedState(onDragMove)
@@ -302,37 +303,45 @@ fun AppIconTile(
                         var dragStarted = false
                         var latestWindowPos = anchorWindow
 
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id }
-                            if (change == null) {
-                                if (dragStarted) currentOnDragCancel?.invoke()
-                                break
-                            }
-                            change.consume()
-                            val nowWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
-                                ?: latestWindowPos
-                            latestWindowPos = nowWindow
+                        // Open context menu immediately on long-press (standard Android launcher behavior);
+                        // keep Popup non-focusable until finger lifts so sliding past touchSlop transitions cleanly into drag.
+                        currentOnLongPressHoldChanged?.invoke(true)
+                        currentOnLongClick()
 
-                            if (!change.pressed) {
-                                if (dragStarted) {
-                                    currentOnDragEnd?.invoke(nowWindow)
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) {
+                                    if (dragStarted) currentOnDragCancel?.invoke()
+                                    break
+                                }
+                                change.consume()
+                                val nowWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
+                                    ?: latestWindowPos
+                                latestWindowPos = nowWindow
+
+                                if (!change.pressed) {
+                                    if (dragStarted) {
+                                        currentOnDragEnd?.invoke(nowWindow)
+                                    }
+                                    break
+                                }
+
+                                if (!dragStarted) {
+                                    if ((nowWindow - anchorWindow).getDistance() > touchSlop) {
+                                        dragStarted = true
+                                        currentOnLongPressHoldChanged?.invoke(false)
+                                        interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                        pressReleased = true
+                                        currentOnDragStart?.invoke(startBounds ?: Rect.Zero, nowWindow)
+                                    }
                                 } else {
-                                    currentOnLongClick(startBounds)
+                                    currentOnDragMove?.invoke(nowWindow)
                                 }
-                                break
                             }
-
-                            if (!dragStarted) {
-                                if ((nowWindow - anchorWindow).getDistance() > touchSlop) {
-                                    dragStarted = true
-                                    interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
-                                    pressReleased = true
-                                    currentOnDragStart?.invoke(startBounds ?: Rect.Zero, nowWindow)
-                                }
-                            } else {
-                                currentOnDragMove?.invoke(nowWindow)
-                            }
+                        } finally {
+                            currentOnLongPressHoldChanged?.invoke(false)
                         }
                         if (!pressReleased) {
                             interactionSource.tryEmit(PressInteraction.Release(pressInteraction))
@@ -411,8 +420,7 @@ fun AppIconTile(
             onLongClick = {
                 longPressTriggeredInGesture = true
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                val bounds = coordsHolder.coords?.takeIf { it.isAttached }?.boundsInWindow()
-                currentOnLongClick(bounds)
+                currentOnLongClick()
             },
         )
     }
@@ -483,83 +491,193 @@ fun PageIndicatorDots(
     }
 }
 
+internal class ExpressiveMenuItemSpec(
+    val text: @Composable () -> Unit,
+    val leadingIcon: (@Composable () -> Unit)? = null,
+    val trailingIcon: (@Composable () -> Unit)? = null,
+    val colors: MenuItemColors? = null,
+    val testTag: String? = null,
+    val submenuGroups: List<List<ExpressiveMenuItemSpec>>? = null,
+    val onClick: () -> Unit = {},
+)
+
 /**
- * Standard Material 3 DropdownMenu anchored to the long-pressed app icon's bounds.
+ * Renders segmented Material 3 Expressive [DropdownMenuGroup] sections inside a [DropdownMenuPopup],
+ * including optional official cascading submenus via nested [DropdownMenuPopup].
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun AppContextMenuPopup(
-    target: AppMenuTarget,
-    isPinnedDock: Boolean,
-    hasWidgets: Boolean,
-    appGestures: Map<SwipeDirection, String>,
-    appsByKey: Map<String, AppItem>,
-    shortcutsByTargetKey: Map<String, AppShortcutItem>,
-    appOwnShortcuts: List<AppShortcutItem>,
-    hasShortcutHostPermission: Boolean,
-    onDismiss: () -> Unit,
-    onLaunchShortcut: (AppShortcutItem) -> Unit,
-    onOpenDefaultHomeSettings: () -> Unit,
-    onOpenLauncherSettings: () -> Unit,
-    onOpenAppWidgets: () -> Unit,
-    onOpenGestureConfig: () -> Unit,
-    onPinToCurrentHomePage: () -> Unit,
-    onRemoveFromHomePage: () -> Unit,
-    onOpenMovePage: () -> Unit,
-    onOpenDrawerTabs: () -> Unit,
-    onTogglePinDock: () -> Unit,
-    onAppInfo: () -> Unit,
-    onUninstall: () -> Unit,
+internal fun ExpressiveMenuGroupsContent(
+    groups: List<List<ExpressiveMenuItemSpec>>,
+    parentExpanded: Boolean,
+    onActionClicked: () -> Unit = {},
 ) {
-    val density = LocalDensity.current
-    val iconBounds = target.anchorBounds
-    val app = target.app
-    val hasTopLevelItems = appOwnShortcuts.isNotEmpty() ||
-        (!hasShortcutHostPermission && !app.isSelfLauncher) ||
-        app.isSelfLauncher
-    var showMoreOptions by remember(app.componentKey, target.origin) { mutableStateOf(false) }
-
-    val gestureSummaryParts = if (target.origin == AppActionOrigin.HOME || target.origin == AppActionOrigin.DOCK) {
-        buildList {
-            fun resolveLabel(key: String): String? =
-                appsByKey[key]?.label ?: shortcutsByTargetKey[key]?.displayLabel
-
-            appGestures[SwipeDirection.UP]?.let { key ->
-                resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_up, it)) }
-            }
-            appGestures[SwipeDirection.DOWN]?.let { key ->
-                resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_down, it)) }
-            }
-            appGestures[SwipeDirection.LEFT]?.let { key ->
-                resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_left, it)) }
-            }
-            appGestures[SwipeDirection.RIGHT]?.let { key ->
-                resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_right, it)) }
+    val nonEmptyGroups = groups.filter { it.isNotEmpty() }
+    nonEmptyGroups.forEachIndexed { groupIndex, items ->
+        if (groupIndex > 0) {
+            Spacer(modifier = Modifier.height(MenuDefaults.GroupSpacing))
+        }
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(groupIndex, nonEmptyGroups.size),
+        ) {
+            items.forEachIndexed { itemIndex, item ->
+                val itemShape = MenuDefaults.itemShape(itemIndex, items.size).shape
+                val submenu = item.submenuGroups?.filter { it.isNotEmpty() }
+                if (!submenu.isNullOrEmpty()) {
+                    var submenuExpanded by remember(parentExpanded) { mutableStateOf(false) }
+                    Box {
+                        DropdownMenuItem(
+                            text = item.text,
+                            onClick = { submenuExpanded = !submenuExpanded },
+                            shape = itemShape,
+                            leadingIcon = item.leadingIcon,
+                            trailingIcon = item.trailingIcon ?: {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowRight,
+                                    contentDescription = null,
+                                )
+                            },
+                            colors = item.colors ?: MenuDefaults.itemColors(),
+                            modifier = if (item.testTag != null) Modifier.testTag(item.testTag) else Modifier,
+                        )
+                        DropdownMenuPopup(
+                            expanded = parentExpanded && submenuExpanded,
+                            onDismissRequest = { submenuExpanded = false },
+                            properties = PopupProperties(focusable = true),
+                        ) {
+                            ExpressiveMenuGroupsContent(
+                                groups = submenu,
+                                parentExpanded = parentExpanded && submenuExpanded,
+                                onActionClicked = {
+                                    submenuExpanded = false
+                                    onActionClicked()
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    DropdownMenuItem(
+                        text = item.text,
+                        onClick = {
+                            onActionClicked()
+                            item.onClick()
+                        },
+                        shape = itemShape,
+                        leadingIcon = item.leadingIcon,
+                        trailingIcon = item.trailingIcon,
+                        colors = item.colors ?: MenuDefaults.itemColors(),
+                        modifier = if (item.testTag != null) Modifier.testTag(item.testTag) else Modifier,
+                    )
+                }
             }
         }
-    } else {
-        emptyList()
+    }
+}
+
+@Immutable
+data class AppContextMenuHost(
+    val activeTarget: AppMenuTarget?,
+    val dockKeys: List<String>,
+    val appGestures: Map<String, Map<SwipeDirection, String>>,
+    val appsByKey: Map<String, AppItem>,
+    val shortcutsByTargetKey: Map<String, AppShortcutItem>,
+    val hasShortcutHostPermission: Boolean,
+    val hasWidgetsForPackage: (String) -> Boolean,
+    val onOpen: (AppItem, AppActionOrigin, Int) -> Unit,
+    val onDismiss: () -> Unit,
+    val onLaunchShortcut: (AppShortcutItem) -> Unit,
+    val onOpenDefaultHomeSettings: () -> Unit,
+    val onOpenLauncherSettings: () -> Unit,
+    val onOpenAppWidgets: (String) -> Unit,
+    val onOpenGestureConfig: (AppItem) -> Unit,
+    val onPinToCurrentHomePage: (AppItem) -> Unit,
+    val onRemoveFromHomePage: (AppItem, Int) -> Unit,
+    val onOpenMovePage: (AppMenuTarget) -> Unit,
+    val onOpenDrawerTabs: (AppItem) -> Unit,
+    val onTogglePinDock: (AppItem) -> Unit,
+    val onAppInfo: (AppItem) -> Unit,
+    val onUninstall: (AppItem) -> Unit,
+) {
+    fun isExpandedFor(app: AppItem, origin: AppActionOrigin, sourcePageIndex: Int): Boolean {
+        val target = activeTarget ?: return false
+        return target.origin == origin &&
+            target.sourcePageIndex == sourcePageIndex &&
+            target.app.componentKey == app.componentKey
+    }
+}
+
+/**
+ * Official Material 3 Expressive grouped context menu mounted natively inside the trigger app icon's [Box].
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun AppContextMenuDropdown(
+    app: AppItem,
+    origin: AppActionOrigin,
+    sourcePageIndex: Int,
+    expanded: Boolean,
+    host: AppContextMenuHost,
+    isPointerHeld: Boolean = false,
+) {
+    // Keep this app's loaded shortcuts stable while its exit animation finishes
+    var cachedShortcuts by remember(app.componentKey) { mutableStateOf<List<AppShortcutItem>>(emptyList()) }
+    if (expanded) {
+        host.activeTarget?.shortcuts?.let { cachedShortcuts = it }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        val anchorModifier = if (iconBounds != null) {
-            val widthDp = with(density) { iconBounds.width.toDp().coerceAtLeast(1.dp) }
-            val heightDp = with(density) { iconBounds.height.toDp().coerceAtLeast(1.dp) }
-            Modifier
-                .offset { IntOffset(iconBounds.left.roundToInt(), iconBounds.top.roundToInt()) }
-                .size(width = widthDp, height = heightDp)
+    DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = host.onDismiss,
+        properties = PopupProperties(
+            focusable = !isPointerHeld,
+            dismissOnClickOutside = !isPointerHeld,
+        ),
+        modifier = Modifier.testTag("app_context_menu_popup"),
+    ) {
+        val appOwnShortcuts = cachedShortcuts
+        val isPinnedDock = app.componentKey in host.dockKeys
+        val hasWidgets = remember(app.packageName) { host.hasWidgetsForPackage(app.packageName) }
+        val appGestures = host.appGestures[app.componentKey].orEmpty()
+        val hasTopLevelItems = appOwnShortcuts.isNotEmpty() ||
+            (!host.hasShortcutHostPermission && !app.isSelfLauncher) ||
+            app.isSelfLauncher
+
+        val gestureSummaryParts = if (origin == AppActionOrigin.HOME || origin == AppActionOrigin.DOCK) {
+            buildList {
+                fun resolveLabel(key: String): String? =
+                    host.appsByKey[key]?.label ?: host.shortcutsByTargetKey[key]?.displayLabel
+
+                appGestures[SwipeDirection.UP]?.let { key ->
+                    resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_up, it)) }
+                }
+                appGestures[SwipeDirection.DOWN]?.let { key ->
+                    resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_down, it)) }
+                }
+                appGestures[SwipeDirection.LEFT]?.let { key ->
+                    resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_left, it)) }
+                }
+                appGestures[SwipeDirection.RIGHT]?.let { key ->
+                    resolveLabel(key)?.let { add(stringResource(R.string.gesture_short_right, it)) }
+                }
+            }
         } else {
-            Modifier.align(Alignment.Center)
+            emptyList()
         }
 
-        Box(modifier = anchorModifier) {
-            DropdownMenu(
-                expanded = true,
-                onDismissRequest = onDismiss,
-                modifier = Modifier.testTag("app_context_menu_popup"),
-            ) {
-                if (appOwnShortcuts.isNotEmpty()) {
-                    appOwnShortcuts.forEach { shortcut ->
-                        DropdownMenuItem(
+        val primaryItemColors = MenuDefaults.itemColors(
+            textColor = MaterialTheme.colorScheme.primary,
+            leadingIconColor = MaterialTheme.colorScheme.primary,
+        )
+        val errorItemColors = MenuDefaults.itemColors(
+            textColor = MaterialTheme.colorScheme.error,
+            leadingIconColor = MaterialTheme.colorScheme.error,
+        )
+
+        val topLevelGroup = buildList {
+            if (appOwnShortcuts.isNotEmpty()) {
+                appOwnShortcuts.forEach { shortcut ->
+                    add(
+                        ExpressiveMenuItemSpec(
                             text = {
                                 Text(
                                     text = shortcut.label,
@@ -567,14 +685,14 @@ fun AppContextMenuPopup(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             },
-                            leadingIcon = {
-                                ShortcutIconImage(shortcut = shortcut, size = 24.dp)
-                            },
-                            onClick = { onLaunchShortcut(shortcut) },
+                            leadingIcon = { ShortcutIconImage(shortcut = shortcut, size = 24.dp) },
+                            onClick = { host.onLaunchShortcut(shortcut) },
                         )
-                    }
-                } else if (!hasShortcutHostPermission && !app.isSelfLauncher) {
-                    DropdownMenuItem(
+                    )
+                }
+            } else if (!host.hasShortcutHostPermission && !app.isSelfLauncher) {
+                add(
+                    ExpressiveMenuItemSpec(
                         text = {
                             Text(
                                 text = stringResource(R.string.action_enable_app_shortcuts),
@@ -582,157 +700,182 @@ fun AppContextMenuPopup(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         },
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Rounded.Home, contentDescription = null)
-                        },
-                        colors = MenuDefaults.itemColors(
-                            textColor = MaterialTheme.colorScheme.primary,
-                            leadingIconColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        onClick = onOpenDefaultHomeSettings,
-                        modifier = Modifier.testTag("menu_enable_app_shortcuts"),
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
+                        colors = primaryItemColors,
+                        testTag = "menu_enable_app_shortcuts",
+                        onClick = host.onOpenDefaultHomeSettings,
                     )
-                }
+                )
+            }
 
-                if (app.isSelfLauncher) {
-                    DropdownMenuItem(
+            if (app.isSelfLauncher) {
+                add(
+                    ExpressiveMenuItemSpec(
                         text = { Text(text = stringResource(R.string.settings_title)) },
                         leadingIcon = { Icon(imageVector = Icons.Rounded.Settings, contentDescription = null) },
-                        onClick = onOpenLauncherSettings,
-                        modifier = Modifier.testTag("menu_launcher_settings"),
+                        testTag = "menu_launcher_settings",
+                        onClick = host.onOpenLauncherSettings,
                     )
-                }
+                )
+            }
+        }
 
-                if (hasTopLevelItems) {
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.action_more_options)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.MoreHoriz, contentDescription = null) },
-                        trailingIcon = {
-                            Icon(
-                                imageVector = if (showMoreOptions) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                contentDescription = null,
-                            )
-                        },
-                        onClick = { showMoreOptions = !showMoreOptions },
-                        modifier = Modifier.testTag("menu_more_options"),
+        val actionsGroup = buildList {
+            if (hasWidgets) {
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.action_app_widgets)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Widgets, contentDescription = null) },
+                        testTag = "menu_app_widgets",
+                        onClick = { host.onOpenAppWidgets(app.packageName) },
                     )
-                }
+                )
+            }
 
-                if (!hasTopLevelItems || showMoreOptions) {
-                    if (hasWidgets) {
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.action_app_widgets)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Widgets, contentDescription = null) },
-                            onClick = onOpenAppWidgets,
-                            modifier = Modifier.testTag("menu_app_widgets"),
-                        )
-                    }
-
-                    if (target.origin == AppActionOrigin.HOME || target.origin == AppActionOrigin.DOCK) {
-                        DropdownMenuItem(
-                            text = {
-                                if (gestureSummaryParts.isEmpty()) {
+            if (origin == AppActionOrigin.HOME || origin == AppActionOrigin.DOCK) {
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = {
+                            if (gestureSummaryParts.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.action_dock_gestures),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            } else {
+                                Column {
                                     Text(
                                         text = stringResource(R.string.action_dock_gestures),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                } else {
-                                    Column {
-                                        Text(
-                                            text = stringResource(R.string.action_dock_gestures),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            text = gestureSummaryParts.joinToString(" · "),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
+                                    Text(
+                                        text = gestureSummaryParts.joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
-                            },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Swipe, contentDescription = null) },
-                            onClick = onOpenGestureConfig,
-                            modifier = Modifier.testTag("menu_app_gestures"),
-                        )
-                    }
-
-                    when (target.origin) {
-                        AppActionOrigin.HOME -> {
-                            DropdownMenuItem(
-                                text = { Text(text = stringResource(R.string.action_move_home_page)) },
-                                leadingIcon = {
-                                    Icon(imageVector = Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null)
-                                },
-                                onClick = onOpenMovePage,
-                                modifier = Modifier.testTag("menu_move_home_page"),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(text = stringResource(R.string.action_unpin_home)) },
-                                leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
-                                onClick = onRemoveFromHomePage,
-                                modifier = Modifier.testTag("menu_unpin_home"),
-                            )
-                        }
-
-                        AppActionOrigin.DRAWER -> {
-                            DropdownMenuItem(
-                                text = { Text(text = stringResource(R.string.action_pin_home)) },
-                                leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
-                                onClick = onPinToCurrentHomePage,
-                                modifier = Modifier.testTag("menu_pin_home"),
-                            )
-                            DropdownMenuItem(
-                                text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
-                                leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
-                                onClick = onOpenDrawerTabs,
-                                modifier = Modifier.testTag("menu_drawer_tabs"),
-                            )
-                        }
-
-                        AppActionOrigin.DOCK -> Unit
-                    }
-
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = stringResource(
-                                    if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
-                                )
-                            )
+                            }
                         },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
-                        onClick = onTogglePinDock,
-                        modifier = Modifier.testTag("menu_toggle_dock"),
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Swipe, contentDescription = null) },
+                        testTag = "menu_app_gestures",
+                        onClick = { host.onOpenGestureConfig(app) },
                     )
+                )
+            }
 
-                    HorizontalDivider()
-
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.action_app_info)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.Info, contentDescription = null) },
-                        onClick = onAppInfo,
-                        modifier = Modifier.testTag("menu_app_info"),
-                    )
-
-                    if (!app.isSystemApp && !app.isSelfLauncher) {
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.action_uninstall)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
-                            colors = MenuDefaults.itemColors(
-                                textColor = MaterialTheme.colorScheme.error,
-                                leadingIconColor = MaterialTheme.colorScheme.error,
-                            ),
-                            onClick = onUninstall,
-                            modifier = Modifier.testTag("menu_uninstall"),
+            when (origin) {
+                AppActionOrigin.HOME -> {
+                    add(
+                        ExpressiveMenuItemSpec(
+                            text = { Text(text = stringResource(R.string.action_move_home_page)) },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null)
+                            },
+                            testTag = "menu_move_home_page",
+                            onClick = {
+                                host.onOpenMovePage(
+                                    AppMenuTarget(
+                                        app = app,
+                                        origin = origin,
+                                        sourcePageIndex = sourcePageIndex,
+                                        shortcuts = appOwnShortcuts,
+                                    )
+                                )
+                            },
                         )
-                    }
+                    )
+                    add(
+                        ExpressiveMenuItemSpec(
+                            text = { Text(text = stringResource(R.string.action_unpin_home)) },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
+                            testTag = "menu_unpin_home",
+                            onClick = { host.onRemoveFromHomePage(app, sourcePageIndex) },
+                        )
+                    )
                 }
+
+                AppActionOrigin.DRAWER -> {
+                    add(
+                        ExpressiveMenuItemSpec(
+                            text = { Text(text = stringResource(R.string.action_pin_home)) },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
+                            testTag = "menu_pin_home",
+                            onClick = { host.onPinToCurrentHomePage(app) },
+                        )
+                    )
+                    add(
+                        ExpressiveMenuItemSpec(
+                            text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
+                            testTag = "menu_drawer_tabs",
+                            onClick = { host.onOpenDrawerTabs(app) },
+                        )
+                    )
+                }
+
+                AppActionOrigin.DOCK -> Unit
+            }
+
+            add(
+                ExpressiveMenuItemSpec(
+                    text = {
+                        Text(
+                            text = stringResource(
+                                if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
+                            )
+                        )
+                    },
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
+                    testTag = "menu_toggle_dock",
+                    onClick = { host.onTogglePinDock(app) },
+                )
+            )
+        }
+
+        val systemGroup = buildList {
+            add(
+                ExpressiveMenuItemSpec(
+                    text = { Text(text = stringResource(R.string.action_app_info)) },
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.Info, contentDescription = null) },
+                    testTag = "menu_app_info",
+                    onClick = { host.onAppInfo(app) },
+                )
+            )
+            if (!app.isSystemApp && !app.isSelfLauncher) {
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.action_uninstall)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
+                        colors = errorItemColors,
+                        testTag = "menu_uninstall",
+                        onClick = { host.onUninstall(app) },
+                    )
+                )
             }
         }
+
+        val rootGroups = if (hasTopLevelItems) {
+            listOf(
+                topLevelGroup,
+                listOf(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.action_more_options)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.MoreHoriz, contentDescription = null) },
+                        testTag = "menu_more_options",
+                        submenuGroups = listOf(actionsGroup, systemGroup),
+                    )
+                ),
+            )
+        } else {
+            listOf(actionsGroup, systemGroup)
+        }
+
+        ExpressiveMenuGroupsContent(
+            groups = rootGroups,
+            parentExpanded = expanded,
+        )
     }
 }

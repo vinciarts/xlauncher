@@ -149,7 +149,8 @@
     <string name="widget_count_suffix">%1$d widgets</string>
     <string name="widget_size_label">%1$d × %2$d</string>
     <string name="widget_menu_configure">Configure widget</string>
-    <string name="widget_menu_resize">Resize</string>
+    <string name="widget_menu_resize">Resize &amp; move</string>
+    <string name="widget_menu_move_position">Move widget</string>
     <string name="widget_menu_move_page">Move to another page</string>
     <string name="widget_menu_remove">Remove</string>
     <string name="widget_resize_title">Resize widget</string>

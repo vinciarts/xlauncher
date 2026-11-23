@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,23 +13,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
+import androidx.compose.material.icons.automirrored.rounded.LastPage
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FirstPage
-import androidx.compose.material.icons.rounded.LastPage
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.Widgets
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +51,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -58,16 +60,19 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.PlacedWidget
-import com.example.model.WidgetMenuTarget
 import com.example.model.WidgetResizeSpec
+import com.example.widget.WidgetHostController
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Standard Material 3 DropdownMenu anchored to the long-pressed point on empty desktop space.
+ * Material 3 Expressive grouped menu anchored directly at the local long-press point on empty desktop space.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HomeEmptyMenuPopup(
-    anchorOffset: Offset,
+    anchorOffset: Offset?,
     canAddPage: Boolean,
     canDeleteCurrentPage: Boolean,
     onAddWidget: () -> Unit,
@@ -77,141 +82,191 @@ fun HomeEmptyMenuPopup(
     onAddPageAtEnd: () -> Unit,
     onDeleteCurrentPage: () -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(anchorOffset.x.roundToInt(), anchorOffset.y.roundToInt()) }
-                .size(1.dp),
-        ) {
-            DropdownMenu(
-                expanded = true,
+    var lastAnchor by remember { mutableStateOf<Offset?>(null) }
+    if (anchorOffset != null) {
+        lastAnchor = anchorOffset
+    }
+    val activeOffset = anchorOffset ?: lastAnchor ?: return
+
+    Box(
+        modifier = modifier
+            .offset { IntOffset(activeOffset.x.roundToInt(), activeOffset.y.roundToInt()) }
+            .size(1.dp),
+    ) {
+        key(activeOffset) {
+            val expanded = anchorOffset != null
+            DropdownMenuPopup(
+                expanded = expanded,
                 onDismissRequest = onDismiss,
                 modifier = Modifier.testTag("home_empty_menu_popup"),
             ) {
-                DropdownMenuItem(
-                    text = { Text(text = stringResource(R.string.home_menu_add_widget)) },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Widgets, contentDescription = null) },
-                    onClick = onAddWidget,
-                    modifier = Modifier.testTag("home_menu_add_widget"),
-                )
-                DropdownMenuItem(
-                    text = { Text(text = stringResource(R.string.home_menu_wallpaper)) },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Wallpaper, contentDescription = null) },
-                    onClick = onOpenWallpaper,
-                    modifier = Modifier.testTag("home_menu_wallpaper"),
-                )
-                DropdownMenuItem(
-                    text = { Text(text = stringResource(R.string.home_menu_settings)) },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Settings, contentDescription = null) },
-                    onClick = onOpenSettings,
-                    modifier = Modifier.testTag("home_menu_settings"),
+                val errorItemColors = MenuDefaults.itemColors(
+                    textColor = MaterialTheme.colorScheme.error,
+                    leadingIconColor = MaterialTheme.colorScheme.error,
                 )
 
-                if (canAddPage || canDeleteCurrentPage) {
-                    HorizontalDivider()
+                val homeActionsGroup = listOf(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.home_menu_add_widget)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Widgets, contentDescription = null) },
+                        testTag = "home_menu_add_widget",
+                        onClick = onAddWidget,
+                    ),
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.home_menu_wallpaper)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Wallpaper, contentDescription = null) },
+                        testTag = "home_menu_wallpaper",
+                        onClick = onOpenWallpaper,
+                    ),
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.home_menu_settings)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Settings, contentDescription = null) },
+                        testTag = "home_menu_settings",
+                        onClick = onOpenSettings,
+                    ),
+                )
+
+                val pageActionsGroup = buildList {
+                    if (canAddPage) {
+                        add(
+                            ExpressiveMenuItemSpec(
+                                text = { Text(text = stringResource(R.string.home_menu_add_page_start)) },
+                                leadingIcon = { Icon(imageVector = Icons.Rounded.FirstPage, contentDescription = null) },
+                                testTag = "home_menu_add_page_start",
+                                onClick = onAddPageAtStart,
+                            )
+                        )
+                        add(
+                            ExpressiveMenuItemSpec(
+                                text = { Text(text = stringResource(R.string.home_menu_add_page_end)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.AutoMirrored.Rounded.LastPage, contentDescription = null)
+                                },
+                                testTag = "home_menu_add_page_end",
+                                onClick = onAddPageAtEnd,
+                            )
+                        )
+                    }
+                    if (canDeleteCurrentPage) {
+                        add(
+                            ExpressiveMenuItemSpec(
+                                text = { Text(text = stringResource(R.string.home_menu_delete_page)) },
+                                leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
+                                colors = errorItemColors,
+                                testTag = "home_menu_delete_page",
+                                onClick = onDeleteCurrentPage,
+                            )
+                        )
+                    }
                 }
-                if (canAddPage) {
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.home_menu_add_page_start)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.FirstPage, contentDescription = null) },
-                        onClick = onAddPageAtStart,
-                        modifier = Modifier.testTag("home_menu_add_page_start"),
-                    )
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.home_menu_add_page_end)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.LastPage, contentDescription = null) },
-                        onClick = onAddPageAtEnd,
-                        modifier = Modifier.testTag("home_menu_add_page_end"),
-                    )
-                }
-                if (canDeleteCurrentPage) {
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.home_menu_delete_page)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
-                        colors = MenuDefaults.itemColors(
-                            textColor = MaterialTheme.colorScheme.error,
-                            leadingIconColor = MaterialTheme.colorScheme.error,
-                        ),
-                        onClick = onDeleteCurrentPage,
-                        modifier = Modifier.testTag("home_menu_delete_page"),
-                    )
-                }
+
+                ExpressiveMenuGroupsContent(
+                    groups = listOf(homeActionsGroup, pageActionsGroup),
+                    parentExpanded = expanded,
+                )
             }
         }
     }
 }
 
-/**
- * Standard Material 3 DropdownMenu anchored to a long-pressed Home widget's bounds.
- */
-@Composable
-fun WidgetContextMenuPopup(
-    target: WidgetMenuTarget,
-    canReconfigure: Boolean,
-    canResize: Boolean,
-    onDismiss: () -> Unit,
-    onReconfigure: () -> Unit,
-    onResize: () -> Unit,
-    onMovePage: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    val density = LocalDensity.current
-    val widgetBounds = target.anchorBounds
+@Immutable
+data class WidgetContextMenuHost(
+    val activeWidgetId: Int?,
+    val onOpen: (PlacedWidget) -> Unit,
+    val onDismiss: () -> Unit,
+    val onReconfigure: (PlacedWidget) -> Unit,
+    val onResize: (PlacedWidget) -> Unit,
+    val onMovePage: (PlacedWidget) -> Unit,
+    val onRemove: (PlacedWidget) -> Unit,
+)
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        val anchorModifier = if (widgetBounds != null) {
-            val widthDp = with(density) { widgetBounds.width.toDp().coerceAtLeast(1.dp) }
-            val heightDp = with(density) { widgetBounds.height.toDp().coerceAtLeast(1.dp) }
-            Modifier
-                .offset { IntOffset(widgetBounds.left.roundToInt(), widgetBounds.top.roundToInt()) }
-                .size(width = widthDp, height = heightDp)
-        } else {
-            Modifier.align(Alignment.Center)
+/**
+ * Official Material 3 Expressive grouped context menu mounted natively inside the placed widget's [Box].
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun WidgetContextMenuDropdown(
+    widget: PlacedWidget,
+    expanded: Boolean,
+    cols: Int,
+    widgetHostController: WidgetHostController,
+    host: WidgetContextMenuHost,
+) {
+    DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = host.onDismiss,
+        modifier = Modifier.testTag("widget_context_menu_popup"),
+    ) {
+        val canReconfigure = remember(widget.appWidgetId) {
+            widgetHostController.isReconfigurable(widget.appWidgetId)
+        }
+        val canResize = remember(widget.appWidgetId, cols) {
+            widgetHostController.getResizeSpec(widget.appWidgetId, cols).isResizable
         }
 
-        Box(modifier = anchorModifier) {
-            DropdownMenu(
-                expanded = true,
-                onDismissRequest = onDismiss,
-                modifier = Modifier.testTag("widget_context_menu_popup"),
-            ) {
-                if (canReconfigure) {
-                    DropdownMenuItem(
+        val errorItemColors = MenuDefaults.itemColors(
+            textColor = MaterialTheme.colorScheme.error,
+            leadingIconColor = MaterialTheme.colorScheme.error,
+        )
+
+        val widgetActionsGroup = buildList {
+            if (canReconfigure) {
+                add(
+                    ExpressiveMenuItemSpec(
                         text = { Text(text = stringResource(R.string.widget_menu_configure)) },
                         leadingIcon = { Icon(imageVector = Icons.Rounded.Tune, contentDescription = null) },
-                        onClick = onReconfigure,
-                        modifier = Modifier.testTag("widget_menu_configure"),
+                        testTag = "widget_menu_configure",
+                        onClick = { host.onReconfigure(widget) },
                     )
-                }
-                if (canResize) {
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.widget_menu_resize)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.AspectRatio, contentDescription = null) },
-                        onClick = onResize,
-                        modifier = Modifier.testTag("widget_menu_resize"),
-                    )
-                }
-                DropdownMenuItem(
+                )
+            }
+            add(
+                ExpressiveMenuItemSpec(
+                    text = {
+                        Text(
+                            text = stringResource(
+                                if (canResize) R.string.widget_menu_resize else R.string.widget_menu_move_position
+                            )
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (canResize) Icons.Rounded.AspectRatio else Icons.Rounded.OpenWith,
+                            contentDescription = null,
+                        )
+                    },
+                    testTag = "widget_menu_resize",
+                    onClick = { host.onResize(widget) },
+                )
+            )
+            add(
+                ExpressiveMenuItemSpec(
                     text = { Text(text = stringResource(R.string.widget_menu_move_page)) },
                     leadingIcon = {
                         Icon(imageVector = Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null)
                     },
-                    onClick = onMovePage,
-                    modifier = Modifier.testTag("widget_menu_move_page"),
+                    testTag = "widget_menu_move_page",
+                    onClick = { host.onMovePage(widget) },
                 )
-                DropdownMenuItem(
-                    text = { Text(text = stringResource(R.string.widget_menu_remove)) },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
-                    colors = MenuDefaults.itemColors(
-                        textColor = MaterialTheme.colorScheme.error,
-                        leadingIconColor = MaterialTheme.colorScheme.error,
-                    ),
-                    onClick = onRemove,
-                    modifier = Modifier.testTag("widget_menu_remove"),
-                )
-            }
+            )
         }
+
+        val removeGroup = listOf(
+            ExpressiveMenuItemSpec(
+                text = { Text(text = stringResource(R.string.widget_menu_remove)) },
+                leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
+                colors = errorItemColors,
+                testTag = "widget_menu_remove",
+                onClick = { host.onRemove(widget) },
+            )
+        )
+
+        ExpressiveMenuGroupsContent(
+            groups = listOf(widgetActionsGroup, removeGroup),
+            parentExpanded = expanded,
+        )
     }
 }
 
@@ -250,12 +305,12 @@ private fun stepTowardValue(
 }
 
 /**
- * AOSP Launcher3-style inline AppWidgetResizeFrame overlay rendered in the Home root layer
- * (sized to widgetBounds + 24.dp on all 4 sides so every 48.dp edge handle sits centered
- * on the border with full unclipped touch area).
- * - LEFT / TOP handles shift top-left (cellX, cellY) while keeping opposite edge anchored.
- * - RIGHT / BOTTOM handles keep top-left (cellX, cellY) anchored.
- * - Dragging the widget interior directly repositions top-left (cellX, cellY) on the current page.
+ * AOSP Launcher3-style inline widget edit frame overlay rendered in the Home root layer
+ * (sized to widgetBounds + 24.dp on all 4 sides so edge borders & handles never clip).
+ * Edit-mode gestures:
+ * - Tap anywhere (widget body, border, or outside) -> exits edit mode.
+ * - Drag any resizable border or handle (no long-press needed) -> resizes that border live.
+ * - Long-press the widget body -> starts free-floating drag across cells & screen edges.
  */
 @Composable
 fun WidgetResizeFrameOverlay(
@@ -268,6 +323,7 @@ fun WidgetResizeFrameOverlay(
     isDraggingInterior: Boolean,
     canPlaceRect: (cellX: Int, cellY: Int, spanX: Int, spanY: Int) -> Boolean,
     onUpdateRect: (cellX: Int, cellY: Int, spanX: Int, spanY: Int) -> Unit,
+    onTapToDismiss: () -> Unit,
     onInteriorDragStart: (Rect, Offset) -> Unit,
     onInteriorDragMove: (Offset) -> Unit,
     onInteriorDragEnd: (Offset) -> Unit,
@@ -287,6 +343,7 @@ fun WidgetResizeFrameOverlay(
     )
     val currentCanPlaceRect by rememberUpdatedState(canPlaceRect)
     val currentOnUpdateRect by rememberUpdatedState(onUpdateRect)
+    val currentOnTapToDismiss by rememberUpdatedState(onTapToDismiss)
     val currentOnInteriorDragStart by rememberUpdatedState(onInteriorDragStart)
     val currentOnInteriorDragMove by rememberUpdatedState(onInteriorDragMove)
     val currentOnInteriorDragEnd by rememberUpdatedState(onInteriorDragEnd)
@@ -306,18 +363,189 @@ fun WidgetResizeFrameOverlay(
             .graphicsLayer { alpha = if (isDraggingInterior) 0f else 1f }
             .testTag("widget_resize_frame_${widget.appWidgetId}"),
     ) {
-        // Interior drag hands off to free-floating HomeDragSession (can cross over apps/widgets & trigger edge page-flip)
+        // Unified edit-mode gesture layer:
+        // 1) Drag any resizable border / handle directly (no long-press) to resize
+        // 2) Long-press widget interior to start free-floating drag
+        // 3) Tap anywhere on the widget or border to exit edit mode
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(widget.appWidgetId) {
+                .pointerInput(widget.appWidgetId, spec, cols, rows, safeColStep, safeRowStep) {
                     val marginPx = RESIZE_HANDLE_MARGIN_DP.dp.toPx()
                     val touchSlop = viewConfiguration.touchSlop
+                    val longPressTimeoutMs = viewConfiguration.longPressTimeoutMillis
+
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = true)
-                        val insideWidget = down.position.x in marginPx..(size.width - marginPx) &&
-                            down.position.y in marginPx..(size.height - marginPx)
-                        if (insideWidget) {
+                        val leftLine = marginPx
+                        val rightLine = (size.width - marginPx).coerceAtLeast(leftLine)
+                        val topLine = marginPx
+                        val bottomLine = (size.height - marginPx).coerceAtLeast(topLine)
+                        val widgetW = (rightLine - leftLine).coerceAtLeast(1f)
+                        val widgetH = (bottomLine - topLine).coerceAtLeast(1f)
+                        val innerSlopX = minOf(16.dp.toPx(), widgetW * 0.25f)
+                        val innerSlopY = minOf(16.dp.toPx(), widgetH * 0.25f)
+
+                        val px = down.position.x
+                        val py = down.position.y
+
+                        // Hit-test resizable borders (entire border strip + handle dot area)
+                        val edgeCandidates = mutableListOf<Pair<ResizeEdge, Float>>()
+                        if (spec.canResizeHorizontal && py in (topLine - marginPx)..(bottomLine + marginPx)) {
+                            if (px in (leftLine - marginPx)..(leftLine + innerSlopX)) {
+                                edgeCandidates += ResizeEdge.LEFT to abs(px - leftLine)
+                            }
+                            if (px in (rightLine - innerSlopX)..(rightLine + marginPx)) {
+                                edgeCandidates += ResizeEdge.RIGHT to abs(px - rightLine)
+                            }
+                        }
+                        if (spec.canResizeVertical && px in (leftLine - marginPx)..(rightLine + marginPx)) {
+                            if (py in (topLine - marginPx)..(topLine + innerSlopY)) {
+                                edgeCandidates += ResizeEdge.TOP to abs(py - topLine)
+                            }
+                            if (py in (bottomLine - innerSlopY)..(bottomLine + marginPx)) {
+                                edgeCandidates += ResizeEdge.BOTTOM to abs(py - bottomLine)
+                            }
+                        }
+                        val hitEdge = edgeCandidates.minByOrNull { it.second }?.first
+                        val insideWidget = px in leftLine..rightLine && py in topLine..bottomLine
+
+                        if (hitEdge != null) {
+                            // Immediate border drag (no long-press); tap without dragging exits edit mode
+                            down.consume()
+                            val startWindow = frameCoordsRef.coords?.takeIf { it.isAttached }?.localToWindow(down.position)
+                                ?: down.position
+                            val start = currentRect
+                            var latest = start
+                            val anchorRight = start.cellX + start.spanX
+                            val anchorBottom = start.cellY + start.spanY
+                            val effMinX = minOf(spec.minSpanX, start.spanX)
+                            val effMaxX = maxOf(spec.maxSpanX, start.spanX)
+                            val effMinY = minOf(spec.minSpanY, start.spanY)
+                            val effMaxY = maxOf(spec.maxSpanY, start.spanY)
+                            val stepPx = when (hitEdge) {
+                                ResizeEdge.LEFT, ResizeEdge.RIGHT -> safeColStep
+                                ResizeEdge.TOP, ResizeEdge.BOTTOM -> safeRowStep
+                            }
+                            var didDragBorder = false
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                change.consume()
+                                val nowWindow = frameCoordsRef.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
+                                    ?: startWindow
+                                val totalDelta = nowWindow - startWindow
+
+                                if (!change.pressed) {
+                                    if (!didDragBorder) {
+                                        currentOnTapToDismiss()
+                                    }
+                                    break
+                                }
+
+                                if (!didDragBorder) {
+                                    if (totalDelta.getDistance() <= touchSlop) continue
+                                    didDragBorder = true
+                                    activeEdge = hitEdge
+                                    residualPx = 0f
+                                }
+
+                                val limit = stepPx * 0.45f
+                                when (hitEdge) {
+                                    ResizeEdge.RIGHT -> {
+                                        val signedDx = totalDelta.x
+                                        val maxAllowedSpan = minOf(effMaxX, cols - start.cellX)
+                                        val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
+                                            .coerceIn(effMinX, maxAllowedSpan)
+                                        val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, start.cellY, cand, start.spanY)
+                                        }
+                                        if (acceptedSpan != latest.spanX) {
+                                            latest = latest.copy(spanX = acceptedSpan)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
+                                        }
+                                        val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
+                                        val blocked = acceptedSpan != desiredSpan
+                                        residualPx = if (blocked) {
+                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
+                                        } else {
+                                            rawResidual.coerceIn(-limit, limit)
+                                        }
+                                    }
+
+                                    ResizeEdge.LEFT -> {
+                                        val signedDx = -totalDelta.x
+                                        val maxAllowedSpan = minOf(effMaxX, anchorRight)
+                                        val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
+                                            .coerceIn(effMinX, maxAllowedSpan)
+                                        val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
+                                            currentCanPlaceRect(anchorRight - cand, start.cellY, cand, start.spanY)
+                                        }
+                                        if (acceptedSpan != latest.spanX) {
+                                            latest = latest.copy(cellX = anchorRight - acceptedSpan, spanX = acceptedSpan)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
+                                        }
+                                        val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
+                                        val blocked = acceptedSpan != desiredSpan
+                                        residualPx = if (blocked) {
+                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
+                                        } else {
+                                            rawResidual.coerceIn(-limit, limit)
+                                        }
+                                    }
+
+                                    ResizeEdge.BOTTOM -> {
+                                        val signedDy = totalDelta.y
+                                        val maxAllowedSpan = minOf(effMaxY, rows - start.cellY)
+                                        val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
+                                            .coerceIn(effMinY, maxAllowedSpan)
+                                        val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, start.cellY, start.spanX, cand)
+                                        }
+                                        if (acceptedSpan != latest.spanY) {
+                                            latest = latest.copy(spanY = acceptedSpan)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
+                                        }
+                                        val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
+                                        val blocked = acceptedSpan != desiredSpan
+                                        residualPx = if (blocked) {
+                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
+                                        } else {
+                                            rawResidual.coerceIn(-limit, limit)
+                                        }
+                                    }
+
+                                    ResizeEdge.TOP -> {
+                                        val signedDy = -totalDelta.y
+                                        val maxAllowedSpan = minOf(effMaxY, anchorBottom)
+                                        val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
+                                            .coerceIn(effMinY, maxAllowedSpan)
+                                        val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, anchorBottom - cand, start.spanX, cand)
+                                        }
+                                        if (acceptedSpan != latest.spanY) {
+                                            latest = latest.copy(cellY = anchorBottom - acceptedSpan, spanY = acceptedSpan)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
+                                        }
+                                        val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
+                                        val blocked = acceptedSpan != desiredSpan
+                                        residualPx = if (blocked) {
+                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
+                                        } else {
+                                            rawResidual.coerceIn(-limit, limit)
+                                        }
+                                    }
+                                }
+                            }
+                            activeEdge = null
+                            residualPx = 0f
+                        } else if (insideWidget) {
+                            // Widget body: tap exits edit mode; long-press starts free-floating drag
                             down.consume()
                             val startWindow = frameCoordsRef.coords?.takeIf { it.isAttached }?.localToWindow(down.position)
                                 ?: down.position
@@ -332,33 +560,69 @@ fun WidgetResizeFrameOverlay(
                             } else {
                                 Rect.Zero
                             }
-                            var isMoving = false
+
+                            val deadline = SystemClock.uptimeMillis() + longPressTimeoutMs
+                            var longPressFired = false
+                            var movedBeforeLongPress = false
                             var latestWindow = startWindow
 
                             while (true) {
-                                val ev = awaitPointerEvent()
-                                val ch = ev.changes.firstOrNull { it.id == down.id }
-                                if (ch == null) {
-                                    if (isMoving) currentOnInteriorDragCancel()
+                                val remaining = deadline - SystemClock.uptimeMillis()
+                                if (remaining <= 0L) {
+                                    longPressFired = true
                                     break
                                 }
+                                val ev = withTimeoutOrNull(remaining) {
+                                    awaitPointerEvent()
+                                }
+                                if (ev == null) {
+                                    longPressFired = true
+                                    break
+                                }
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
                                 ch.consume()
                                 val nowWindow = frameCoordsRef.coords?.takeIf { it.isAttached }?.localToWindow(ch.position)
                                     ?: latestWindow
                                 latestWindow = nowWindow
 
                                 if (!ch.pressed) {
-                                    if (isMoving) currentOnInteriorDragEnd(nowWindow)
+                                    if (!movedBeforeLongPress && (nowWindow - startWindow).getDistance() <= touchSlop) {
+                                        currentOnTapToDismiss()
+                                    }
                                     break
                                 }
 
-                                if (!isMoving) {
-                                    if ((nowWindow - startWindow).getDistance() > touchSlop) {
-                                        isMoving = true
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        currentOnInteriorDragStart(widgetBounds, nowWindow)
+                                if ((nowWindow - startWindow).getDistance() > touchSlop) {
+                                    movedBeforeLongPress = true
+                                    // Drain remaining events until lift without starting a drag
+                                    while (true) {
+                                        val drainEv = awaitPointerEvent()
+                                        val drainCh = drainEv.changes.firstOrNull { it.id == down.id } ?: break
+                                        drainCh.consume()
+                                        if (!drainCh.pressed) break
                                     }
-                                } else {
+                                    break
+                                }
+                            }
+
+                            if (longPressFired) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                currentOnInteriorDragStart(widgetBounds, latestWindow)
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull { it.id == down.id }
+                                    if (ch == null) {
+                                        currentOnInteriorDragCancel()
+                                        break
+                                    }
+                                    ch.consume()
+                                    val nowWindow = frameCoordsRef.coords?.takeIf { it.isAttached }?.localToWindow(ch.position)
+                                        ?: latestWindow
+                                    latestWindow = nowWindow
+                                    if (!ch.pressed) {
+                                        currentOnInteriorDragEnd(nowWindow)
+                                        break
+                                    }
                                     currentOnInteriorDragMove(nowWindow)
                                 }
                             }
@@ -401,94 +665,38 @@ fun WidgetResizeFrameOverlay(
         if (spec.canResizeHorizontal) {
             ResizeHandleDot(
                 edge = ResizeEdge.LEFT,
-                widgetId = widget.appWidgetId,
                 alignment = Alignment.CenterStart,
                 activeResidualPx = if (activeEdge == ResizeEdge.LEFT) -residualPx else 0f,
-                cols = cols,
-                rows = rows,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
-                onDragStart = { activeEdge = ResizeEdge.LEFT; residualPx = 0f },
-                onDragEnd = { activeEdge = null; residualPx = 0f },
-                getCurrentRect = { currentRect },
-                canPlaceRect = { cx, cy, sx, sy -> currentCanPlaceRect(cx, cy, sx, sy) },
-                spec = spec,
-                stepPx = safeColStep,
-                onResidualChanged = { residualPx = it },
-                onRectChanged = { rect ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    currentOnUpdateRect(rect.cellX, rect.cellY, rect.spanX, rect.spanY)
-                },
             )
             ResizeHandleDot(
                 edge = ResizeEdge.RIGHT,
-                widgetId = widget.appWidgetId,
                 alignment = Alignment.CenterEnd,
                 activeResidualPx = if (activeEdge == ResizeEdge.RIGHT) residualPx else 0f,
-                cols = cols,
-                rows = rows,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
-                onDragStart = { activeEdge = ResizeEdge.RIGHT; residualPx = 0f },
-                onDragEnd = { activeEdge = null; residualPx = 0f },
-                getCurrentRect = { currentRect },
-                canPlaceRect = { cx, cy, sx, sy -> currentCanPlaceRect(cx, cy, sx, sy) },
-                spec = spec,
-                stepPx = safeColStep,
-                onResidualChanged = { residualPx = it },
-                onRectChanged = { rect ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    currentOnUpdateRect(rect.cellX, rect.cellY, rect.spanX, rect.spanY)
-                },
             )
         }
 
         if (spec.canResizeVertical) {
             ResizeHandleDot(
                 edge = ResizeEdge.TOP,
-                widgetId = widget.appWidgetId,
                 alignment = Alignment.TopCenter,
                 activeResidualPx = if (activeEdge == ResizeEdge.TOP) -residualPx else 0f,
-                cols = cols,
-                rows = rows,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
-                onDragStart = { activeEdge = ResizeEdge.TOP; residualPx = 0f },
-                onDragEnd = { activeEdge = null; residualPx = 0f },
-                getCurrentRect = { currentRect },
-                canPlaceRect = { cx, cy, sx, sy -> currentCanPlaceRect(cx, cy, sx, sy) },
-                spec = spec,
-                stepPx = safeRowStep,
-                onResidualChanged = { residualPx = it },
-                onRectChanged = { rect ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    currentOnUpdateRect(rect.cellX, rect.cellY, rect.spanX, rect.spanY)
-                },
             )
             ResizeHandleDot(
                 edge = ResizeEdge.BOTTOM,
-                widgetId = widget.appWidgetId,
                 alignment = Alignment.BottomCenter,
                 activeResidualPx = if (activeEdge == ResizeEdge.BOTTOM) residualPx else 0f,
-                cols = cols,
-                rows = rows,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
-                onDragStart = { activeEdge = ResizeEdge.BOTTOM; residualPx = 0f },
-                onDragEnd = { activeEdge = null; residualPx = 0f },
-                getCurrentRect = { currentRect },
-                canPlaceRect = { cx, cy, sx, sy -> currentCanPlaceRect(cx, cy, sx, sy) },
-                spec = spec,
-                stepPx = safeRowStep,
-                onResidualChanged = { residualPx = it },
-                onRectChanged = { rect ->
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    currentOnUpdateRect(rect.cellX, rect.cellY, rect.spanX, rect.spanY)
-                },
             )
         }
     }
@@ -499,25 +707,12 @@ const val RESIZE_HANDLE_MARGIN_DP = 24
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ResizeHandleDot(
     edge: ResizeEdge,
-    widgetId: Int,
     alignment: Alignment,
     activeResidualPx: Float,
-    cols: Int,
-    rows: Int,
     primaryColor: androidx.compose.ui.graphics.Color,
     ringColor: androidx.compose.ui.graphics.Color,
     contentDesc: String,
-    onDragStart: () -> Unit,
-    onDragEnd: () -> Unit,
-    getCurrentRect: () -> WidgetGridRect,
-    canPlaceRect: (cellX: Int, cellY: Int, spanX: Int, spanY: Int) -> Boolean,
-    spec: WidgetResizeSpec,
-    stepPx: Float,
-    onResidualChanged: (Float) -> Unit,
-    onRectChanged: (WidgetGridRect) -> Unit,
 ) {
-    val coordsRef = remember { HandleCoordsRef() }
-
     val edgeShift = when (edge) {
         ResizeEdge.LEFT, ResizeEdge.RIGHT -> IntOffset(activeResidualPx.roundToInt(), 0)
         ResizeEdge.TOP, ResizeEdge.BOTTOM -> IntOffset(0, activeResidualPx.roundToInt())
@@ -529,121 +724,8 @@ private fun androidx.compose.foundation.layout.BoxScope.ResizeHandleDot(
             .align(alignment)
             .offset { edgeShift }
             .size((RESIZE_HANDLE_MARGIN_DP * 2).dp)
-            .onGloballyPositioned { coordsRef.coords = it }
             .semantics { contentDescription = contentDesc }
-            .testTag("widget_resize_handle_${edge.name.lowercase()}")
-            .pointerInput(widgetId, edge, spec, cols, rows, stepPx) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    down.consume()
-                    val startWindow = coordsRef.coords?.takeIf { it.isAttached }?.localToWindow(down.position)
-                        ?: down.position
-                    val start = getCurrentRect()
-                    var latest = start
-                    val anchorRight = start.cellX + start.spanX
-                    val anchorBottom = start.cellY + start.spanY
-                    val effMinX = minOf(spec.minSpanX, start.spanX)
-                    val effMaxX = maxOf(spec.maxSpanX, start.spanX)
-                    val effMinY = minOf(spec.minSpanY, start.spanY)
-                    val effMaxY = maxOf(spec.maxSpanY, start.spanY)
-                    onDragStart()
-
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        change.consume()
-                        if (!change.pressed) break
-
-                        val nowWindow = coordsRef.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
-                            ?: change.position
-                        val totalDelta = nowWindow - startWindow
-                        val limit = stepPx * 0.45f
-
-                        when (edge) {
-                            ResizeEdge.RIGHT -> {
-                                val signedDx = totalDelta.x
-                                val maxAllowedSpan = minOf(effMaxX, cols - start.cellX)
-                                val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
-                                    .coerceIn(effMinX, maxAllowedSpan)
-                                val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
-                                    canPlaceRect(start.cellX, start.cellY, cand, start.spanY)
-                                }
-                                if (acceptedSpan != latest.spanX) {
-                                    latest = latest.copy(spanX = acceptedSpan)
-                                    onRectChanged(latest)
-                                }
-                                val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
-                                val blocked = acceptedSpan != desiredSpan
-                                onResidualChanged(
-                                    if (blocked) rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                    else rawResidual.coerceIn(-limit, limit)
-                                )
-                            }
-
-                            ResizeEdge.LEFT -> {
-                                val signedDx = -totalDelta.x
-                                val maxAllowedSpan = minOf(effMaxX, anchorRight)
-                                val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
-                                    .coerceIn(effMinX, maxAllowedSpan)
-                                val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
-                                    canPlaceRect(anchorRight - cand, start.cellY, cand, start.spanY)
-                                }
-                                if (acceptedSpan != latest.spanX) {
-                                    latest = latest.copy(cellX = anchorRight - acceptedSpan, spanX = acceptedSpan)
-                                    onRectChanged(latest)
-                                }
-                                val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
-                                val blocked = acceptedSpan != desiredSpan
-                                onResidualChanged(
-                                    if (blocked) rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                    else rawResidual.coerceIn(-limit, limit)
-                                )
-                            }
-
-                            ResizeEdge.BOTTOM -> {
-                                val signedDy = totalDelta.y
-                                val maxAllowedSpan = minOf(effMaxY, rows - start.cellY)
-                                val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
-                                    .coerceIn(effMinY, maxAllowedSpan)
-                                val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
-                                    canPlaceRect(start.cellX, start.cellY, start.spanX, cand)
-                                }
-                                if (acceptedSpan != latest.spanY) {
-                                    latest = latest.copy(spanY = acceptedSpan)
-                                    onRectChanged(latest)
-                                }
-                                val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
-                                val blocked = acceptedSpan != desiredSpan
-                                onResidualChanged(
-                                    if (blocked) rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                    else rawResidual.coerceIn(-limit, limit)
-                                )
-                            }
-
-                            ResizeEdge.TOP -> {
-                                val signedDy = -totalDelta.y
-                                val maxAllowedSpan = minOf(effMaxY, anchorBottom)
-                                val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
-                                    .coerceIn(effMinY, maxAllowedSpan)
-                                val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
-                                    canPlaceRect(start.cellX, anchorBottom - cand, start.spanX, cand)
-                                }
-                                if (acceptedSpan != latest.spanY) {
-                                    latest = latest.copy(cellY = anchorBottom - acceptedSpan, spanY = acceptedSpan)
-                                    onRectChanged(latest)
-                                }
-                                val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
-                                val blocked = acceptedSpan != desiredSpan
-                                onResidualChanged(
-                                    if (blocked) rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                    else rawResidual.coerceIn(-limit, limit)
-                                )
-                            }
-                        }
-                    }
-                    onDragEnd()
-                }
-            },
+            .testTag("widget_resize_handle_${edge.name.lowercase()}"),
     ) {
         Box(
             modifier = Modifier

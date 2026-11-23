@@ -149,7 +149,8 @@
     <string name="widget_count_suffix">%1$d 个</string>
     <string name="widget_size_label">%1$d × %2$d</string>
     <string name="widget_menu_configure">配置小组件</string>
-    <string name="widget_menu_resize">调整大小</string>
+    <string name="widget_menu_resize">调整大小与位置</string>
+    <string name="widget_menu_move_position">调整位置</string>
     <string name="widget_menu_move_page">移至其他桌面页</string>
     <string name="widget_menu_remove">移除小组件</string>
     <string name="widget_resize_title">调整小组件大小</string>

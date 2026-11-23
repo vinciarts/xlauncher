@@ -56,7 +56,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -76,6 +75,8 @@ import com.example.model.AppActionOrigin
 import com.example.model.AppItem
 import com.example.model.DrawerTab
 import com.example.model.DrawerTabPage
+import com.example.ui.components.AppContextMenuDropdown
+import com.example.ui.components.AppContextMenuHost
 import com.example.ui.components.AppIconTile
 import com.example.ui.components.CreateDrawerTabDialog
 import com.example.ui.components.EditDrawerTabDialog
@@ -96,7 +97,7 @@ fun AppDrawerScreen(
     onSearchQueryChange: (String) -> Unit,
     onAutoFocusConsumed: () -> Unit,
     onAppClick: (AppItem) -> Unit,
-    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
+    appMenuHost: AppContextMenuHost,
     onCreateTab: (String, List<String>) -> Unit,
     onRenameTab: (String, String) -> Unit,
     onSetTabApps: (String, Set<String>) -> Unit,
@@ -147,16 +148,15 @@ fun AppDrawerScreen(
     var pendingSelectNewTabFromCount by remember { mutableStateOf<Int?>(null) }
     var lastSelectedTabId by remember { mutableStateOf(DrawerTab.ALL_TAB_ID) }
 
-    // Pull-to-close ONLY when starting already at top (never steals overscroll or closes after scrolling back up)
+    // Pull-to-close ONLY when starting already at top, evaluated on finger release (onPreFling)
+    // using the exact same ViewConfiguration distance/velocity rule as HomeScreen swipe gestures.
     val pullFromTopDismiss = remember(pagingTouchSlopPx, minFlingVelocityPx) {
         var gestureScrolledList = false
         var accumulatedDown = 0f
-        var dismissed = false
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput && available.y < 0f) {
-                    accumulatedDown = 0f
-                    dismissed = false
+                    accumulatedDown = (accumulatedDown + available.y).coerceAtLeast(0f)
                 }
                 return Offset.Zero
             }
@@ -172,22 +172,21 @@ fun AppDrawerScreen(
                     accumulatedDown = 0f
                     return Offset.Zero
                 }
-                if (!gestureScrolledList && !dismissed && available.y > 0f) {
+                if (!gestureScrolledList && available.y > 0f) {
                     accumulatedDown += available.y
-                    if (accumulatedDown >= pagingTouchSlopPx * 2f) {
-                        dismissed = true
-                        accumulatedDown = 0f
-                        currentOnClose()
-                    }
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (!gestureScrolledList && !dismissed && available.y >= minFlingVelocityPx) {
-                    dismissed = true
+                val cancelledByUpFling = available.y <= -minFlingVelocityPx
+                if (!gestureScrolledList &&
+                    !cancelledByUpFling &&
+                    (accumulatedDown >= pagingTouchSlopPx || available.y >= minFlingVelocityPx)
+                ) {
                     accumulatedDown = 0f
                     currentOnClose()
+                    return available
                 }
                 return Velocity.Zero
             }
@@ -195,7 +194,6 @@ fun AppDrawerScreen(
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 gestureScrolledList = false
                 accumulatedDown = 0f
-                dismissed = false
                 return Velocity.Zero
             }
         }
@@ -367,9 +365,10 @@ fun AppDrawerScreen(
                         DrawerAppsVerticalGrid(
                             apps = filteredDrawerApps,
                             cols = drawerColumns,
-                            tabIndex = 0,
+                            tabIndex = -1,
+                            isCurrentPage = true,
                             onAppClick = onAppClick,
-                            onAppLongClick = onAppLongClick,
+                            appMenuHost = appMenuHost,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
@@ -419,8 +418,9 @@ fun AppDrawerScreen(
                                 apps = tabPage.apps,
                                 cols = drawerColumns,
                                 tabIndex = realPage,
+                                isCurrentPage = virtualPage == pagerState.currentPage,
                                 onAppClick = onAppClick,
-                                onAppLongClick = onAppLongClick,
+                                appMenuHost = appMenuHost,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -549,8 +549,9 @@ private fun DrawerAppsVerticalGrid(
     apps: List<AppItem>,
     cols: Int,
     tabIndex: Int,
+    isCurrentPage: Boolean,
     onAppClick: (AppItem) -> Unit,
-    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
+    appMenuHost: AppContextMenuHost,
     modifier: Modifier = Modifier,
 ) {
     val iconSize = if (cols == 5) 48.dp else 52.dp
@@ -566,18 +567,27 @@ private fun DrawerAppsVerticalGrid(
             key = { it.componentKey },
             contentType = { "drawer_app" },
         ) { app ->
-            AppIconTile(
-                app = app,
-                boundDirections = emptySet(),
-                showLabel = true,
-                onWallpaper = false,
-                iconSize = iconSize,
-                onClick = { onAppClick(app) },
-                onLongClick = { bounds ->
-                    onAppLongClick(app, AppActionOrigin.DRAWER, tabIndex, bounds)
-                },
-                onSwipe = {},
-            )
+            Box {
+                AppIconTile(
+                    app = app,
+                    boundDirections = emptySet(),
+                    showLabel = true,
+                    onWallpaper = false,
+                    iconSize = iconSize,
+                    onClick = { onAppClick(app) },
+                    onLongClick = {
+                        appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
+                    },
+                    onSwipe = {},
+                )
+                AppContextMenuDropdown(
+                    app = app,
+                    origin = AppActionOrigin.DRAWER,
+                    sourcePageIndex = tabIndex,
+                    expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
+                    host = appMenuHost,
+                )
+            }
         }
     }
 }

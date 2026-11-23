@@ -174,7 +174,7 @@ data class AppMenuTarget(
     val app: AppItem,
     val origin: AppActionOrigin,
     val sourcePageIndex: Int = 0,
-    val anchorBounds: Rect? = null,
+    val shortcuts: List<AppShortcutItem> = emptyList(),
 )
 
 @Immutable
@@ -214,12 +214,6 @@ data class WidgetCatalogItem(
     val spanX: Int,
     val spanY: Int,
     val appIcon: ImageBitmap?,
-)
-
-@Immutable
-data class WidgetMenuTarget(
-    val widget: PlacedWidget,
-    val anchorBounds: Rect? = null,
 )
 
 @Immutable
@@ -311,12 +305,11 @@ data class LauncherUiState(
     val autoFocusDrawerSearch: Boolean = false,
     val isDefaultLauncher: Boolean = false,
     val appMenuTarget: AppMenuTarget? = null,
-    val activeAppMenuShortcuts: List<AppShortcutItem> = emptyList(),
     val gestureConfigApp: AppItem? = null,
     val movePageTarget: AppMenuTarget? = null,
     val appTabsTarget: AppItem? = null,
     val homeEmptyMenuAnchor: Offset? = null,
-    val widgetMenuTarget: WidgetMenuTarget? = null,
+    val widgetMenuId: Int? = null,
     val resizingWidgetId: Int? = null,
     val moveWidgetTarget: PlacedWidget? = null,
     val widgetPickerPackageFilter: String? = null,

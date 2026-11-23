@@ -27,10 +27,11 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -62,7 +63,7 @@ import com.example.widget.WidgetHostController
 /**
  * Full-screen Material 3 widget picker using unmodified native LazyColumn scrolling & overscroll stretch.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WidgetPickerScreen(
     catalog: List<WidgetCatalogItem>,
@@ -191,7 +192,7 @@ fun WidgetPickerScreen(
                                 .fillMaxWidth()
                                 .weight(1f),
                         ) {
-                            CircularProgressIndicator(strokeWidth = 2.5.dp)
+                            LoadingIndicator()
                         }
                     }
 

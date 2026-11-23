@@ -2,7 +2,6 @@ package com.example.viewmodel
 
 import android.app.Application
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
@@ -24,7 +23,6 @@ import com.example.model.LauncherSettings
 import com.example.model.LauncherUiState
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
-import com.example.model.WidgetMenuTarget
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +31,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -49,12 +48,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val autoFocusSearch = MutableStateFlow(false)
     private val isDefaultLauncher = MutableStateFlow(false)
     private val appMenuTarget = MutableStateFlow<AppMenuTarget?>(null)
-    private val activeAppMenuShortcuts = MutableStateFlow<List<AppShortcutItem>>(emptyList())
     private val gestureConfigApp = MutableStateFlow<AppItem?>(null)
     private val movePageTarget = MutableStateFlow<AppMenuTarget?>(null)
     private val appTabsTarget = MutableStateFlow<AppItem?>(null)
     private val homeEmptyMenuAnchor = MutableStateFlow<Offset?>(null)
-    private val widgetMenuTarget = MutableStateFlow<WidgetMenuTarget?>(null)
+    private val widgetMenuId = MutableStateFlow<Int?>(null)
     private val resizingWidgetId = MutableStateFlow<Int?>(null)
     private val moveWidgetTarget = MutableStateFlow<PlacedWidget?>(null)
     private val widgetPickerPackageFilter = MutableStateFlow<String?>(null)
@@ -75,13 +73,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private data class OverlayState(
         val menuTarget: AppMenuTarget?,
-        val activeMenuShortcuts: List<AppShortcutItem>,
         val gestureApp: AppItem?,
         val moveTarget: AppMenuTarget?,
         val appTabsTarget: AppItem?,
         val snackbar: String?,
         val homeEmptyAnchor: Offset?,
-        val widgetMenu: WidgetMenuTarget?,
+        val widgetMenuId: Int?,
         val resizingWidgetId: Int?,
         val moveWidget: PlacedWidget?,
         val widgetPickerPackageFilter: String?,
@@ -89,7 +86,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private data class WidgetOverlayState(
         val homeEmptyAnchor: Offset?,
-        val widgetMenu: WidgetMenuTarget?,
+        val widgetMenuId: Int?,
         val resizingWidgetId: Int?,
         val moveWidget: PlacedWidget?,
         val widgetPickerPackageFilter: String?,
@@ -97,7 +94,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private data class AppOverlayState(
         val menuTarget: AppMenuTarget?,
-        val activeMenuShortcuts: List<AppShortcutItem>,
         val gestureApp: AppItem?,
         val moveTarget: AppMenuTarget?,
         val appTabsTarget: AppItem?,
@@ -112,22 +108,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private val appOverlayFlow = combine(
         appMenuTarget,
-        activeAppMenuShortcuts,
         gestureConfigApp,
         movePageTarget,
         appTabsTarget,
-    ) { menu, menuShortcuts, gesture, move, tabs ->
-        AppOverlayState(menu, menuShortcuts, gesture, move, tabs)
+    ) { menu, gesture, move, tabs ->
+        AppOverlayState(menu, gesture, move, tabs)
     }
 
     private val widgetOverlayFlow = combine(
         homeEmptyMenuAnchor,
-        widgetMenuTarget,
+        widgetMenuId,
         resizingWidgetId,
         moveWidgetTarget,
         widgetPickerPackageFilter,
-    ) { emptyAnchor, wMenu, wResizeId, wMove, pkgFilter ->
-        WidgetOverlayState(emptyAnchor, wMenu, wResizeId, wMove, pkgFilter)
+    ) { emptyAnchor, wMenuId, wResizeId, wMove, pkgFilter ->
+        WidgetOverlayState(emptyAnchor, wMenuId, wResizeId, wMove, pkgFilter)
     }
 
     private val overlayFlow = combine(
@@ -137,13 +132,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     ) { appOv, snack, widgetOv ->
         OverlayState(
             menuTarget = appOv.menuTarget,
-            activeMenuShortcuts = appOv.activeMenuShortcuts,
             gestureApp = appOv.gestureApp,
             moveTarget = appOv.moveTarget,
             appTabsTarget = appOv.appTabsTarget,
             snackbar = snack,
             homeEmptyAnchor = widgetOv.homeEmptyAnchor,
-            widgetMenu = widgetOv.widgetMenu,
+            widgetMenuId = widgetOv.widgetMenuId,
             resizingWidgetId = widgetOv.resizingWidgetId,
             moveWidget = widgetOv.moveWidget,
             widgetPickerPackageFilter = widgetOv.widgetPickerPackageFilter,
@@ -270,12 +264,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             autoFocusDrawerSearch = nav.autoFocusSearch,
             isDefaultLauncher = nav.isDefault,
             appMenuTarget = overlay.menuTarget,
-            activeAppMenuShortcuts = overlay.activeMenuShortcuts,
             gestureConfigApp = overlay.gestureApp,
             movePageTarget = overlay.moveTarget,
             appTabsTarget = overlay.appTabsTarget,
             homeEmptyMenuAnchor = overlay.homeEmptyAnchor,
-            widgetMenuTarget = overlay.widgetMenu,
+            widgetMenuId = overlay.widgetMenuId,
             resizingWidgetId = overlay.resizingWidgetId,
             moveWidgetTarget = overlay.moveWidget,
             widgetPickerPackageFilter = overlay.widgetPickerPackageFilter,
@@ -333,7 +326,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         if (!canHost) {
             bulkShortcutsJob?.cancel()
             appShortcuts.value = emptyList()
-            activeAppMenuShortcuts.value = emptyList()
             return
         }
         val apps = installedApps.value
@@ -368,9 +360,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openSettings() {
-        appMenuTarget.value = null
+        clearAppMenuState()
         homeEmptyMenuAnchor.value = null
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
         resizingWidgetId.value = null
         refreshDefaultLauncherStatus()
         destination.value = LauncherDestination.SETTINGS
@@ -384,7 +376,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         movePageTarget.value = null
         appTabsTarget.value = null
         homeEmptyMenuAnchor.value = null
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
         resizingWidgetId.value = null
         moveWidgetTarget.value = null
         widgetPickerPackageFilter.value = null
@@ -407,31 +399,59 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         app: AppItem,
         origin: AppActionOrigin,
         sourcePageIndex: Int = currentHomePage.value,
-        anchorBounds: Rect? = null,
     ) {
         val canHost = appRepository.hasShortcutHostPermission()
         hasShortcutPermission.value = canHost
         isDefaultLauncher.value = appRepository.isDefaultLauncher()
 
-        appMenuTarget.value = AppMenuTarget(app, origin, sourcePageIndex, anchorBounds)
-
-        // Immediately seed from cached shortcuts so there is zero flicker, then query live per-package shortcuts
-        val cached = if (canHost && !app.isSelfLauncher) {
-            appShortcuts.value
-                .filter { it.packageName == app.packageName && it.isMenuShortcut }
-                .sortedBy { it.rank }
-        } else {
-            emptyList()
-        }
-        activeAppMenuShortcuts.value = cached
-
         appMenuShortcutsJob?.cancel()
-        if (canHost && !app.isSelfLauncher) {
+        homeEmptyMenuAnchor.value = null
+        widgetMenuId.value = null
+
+        if (!canHost || app.isSelfLauncher) {
+            appMenuTarget.value = AppMenuTarget(
+                app = app,
+                origin = origin,
+                sourcePageIndex = sourcePageIndex,
+                shortcuts = emptyList(),
+            )
+            return
+        }
+
+        val cached = appShortcuts.value
+            .filter { it.packageName == app.packageName && it.isMenuShortcut }
+            .sortedBy { it.rank }
+
+        if (cached.isNotEmpty()) {
+            appMenuTarget.value = AppMenuTarget(
+                app = app,
+                origin = origin,
+                sourcePageIndex = sourcePageIndex,
+                shortcuts = cached,
+            )
             appMenuShortcutsJob = viewModelScope.launch {
                 val fresh = appRepository.loadShortcutsForApp(app)
-                if (appMenuTarget.value?.app?.componentKey == app.componentKey) {
-                    activeAppMenuShortcuts.value = fresh
+                val current = appMenuTarget.value
+                if (current != null &&
+                    current.app.componentKey == app.componentKey &&
+                    current.origin == origin &&
+                    current.sourcePageIndex == sourcePageIndex &&
+                    fresh.map { it.shortcutId to it.label } != current.shortcuts.map { it.shortcutId to it.label }
+                ) {
+                    appMenuTarget.value = current.copy(shortcuts = fresh)
                 }
+            }
+        } else {
+            appMenuShortcutsJob = viewModelScope.launch {
+                val fresh = withTimeoutOrNull(120L) {
+                    appRepository.loadShortcutsForApp(app)
+                }.orEmpty()
+                appMenuTarget.value = AppMenuTarget(
+                    app = app,
+                    origin = origin,
+                    sourcePageIndex = sourcePageIndex,
+                    shortcuts = fresh,
+                )
             }
         }
     }
@@ -442,12 +462,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private fun clearAppMenuState() {
         appMenuShortcutsJob?.cancel()
+        appMenuShortcutsJob = null
         appMenuTarget.value = null
-        activeAppMenuShortcuts.value = emptyList()
     }
 
     fun openAppGestureConfig(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         gestureConfigApp.value = app
     }
 
@@ -535,7 +555,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun launchShortcut(packageName: String, shortcutId: String) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         val ok = appRepository.launchShortcut(packageName, shortcutId)
         if (ok) {
             if (destination.value == LauncherDestination.DRAWER) {
@@ -553,7 +573,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openMovePageDialog(target: AppMenuTarget) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         movePageTarget.value = target
     }
 
@@ -562,7 +582,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openAppTabsDialog(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         appTabsTarget.value = app
     }
 
@@ -638,7 +658,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun launchApp(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         if (app.isSelfLauncher) {
             openSettings()
             return
@@ -654,7 +674,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun pinToCurrentHomePage(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         val page = currentHomePage.value
         viewModelScope.launch {
             val pinned = prefsRepository.pinAppToHomePage(app.componentKey, page)
@@ -665,14 +685,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removeFromHomePage(app: AppItem, pageIndex: Int) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         viewModelScope.launch {
             prefsRepository.removeAppFromHomePage(app.componentKey, pageIndex)
         }
     }
 
     fun togglePinDock(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         viewModelScope.launch {
             val ok = prefsRepository.togglePinDock(app.componentKey)
             if (!ok) {
@@ -682,12 +702,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openAppInfo(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         appRepository.openAppInfo(app.packageName)
     }
 
     fun uninstallApp(app: AppItem) {
-        appMenuTarget.value = null
+        clearAppMenuState()
         appRepository.requestUninstall(app.packageName)
     }
 
@@ -808,8 +828,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openHomeEmptyMenu(anchor: Offset) {
-        appMenuTarget.value = null
-        widgetMenuTarget.value = null
+        clearAppMenuState()
+        widgetMenuId.value = null
         resizingWidgetId.value = null
         homeEmptyMenuAnchor.value = anchor
     }
@@ -821,7 +841,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun openWidgetPicker(packageName: String? = null) {
         homeEmptyMenuAnchor.value = null
         clearAppMenuState()
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
         resizingWidgetId.value = null
         widgetPickerPackageFilter.value = packageName
         destination.value = LauncherDestination.WIDGET_PICKER
@@ -836,21 +856,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         runSystemAction { appRepository.openWallpaperPicker() }
     }
 
-    fun openWidgetMenu(widget: PlacedWidget, anchorBounds: Rect?) {
+    fun openWidgetMenu(widget: PlacedWidget) {
         homeEmptyMenuAnchor.value = null
-        appMenuTarget.value = null
+        clearAppMenuState()
         resizingWidgetId.value = null
-        widgetMenuTarget.value = WidgetMenuTarget(widget, anchorBounds)
+        widgetMenuId.value = widget.appWidgetId
     }
 
     fun dismissWidgetMenu() {
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
     }
 
     fun openResizeWidget(widget: PlacedWidget) {
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
         homeEmptyMenuAnchor.value = null
-        appMenuTarget.value = null
+        clearAppMenuState()
         resizingWidgetId.value = widget.appWidgetId
     }
 
@@ -859,7 +879,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openMoveWidgetDialog(widget: PlacedWidget) {
-        widgetMenuTarget.value = null
+        widgetMenuId.value = null
         resizingWidgetId.value = null
         moveWidgetTarget.value = widget
     }
@@ -939,7 +959,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removeWidget(appWidgetId: Int) {
-        widgetMenuTarget.value = null
+        if (widgetMenuId.value == appWidgetId) {
+            widgetMenuId.value = null
+        }
         if (resizingWidgetId.value == appWidgetId) {
             resizingWidgetId.value = null
         }

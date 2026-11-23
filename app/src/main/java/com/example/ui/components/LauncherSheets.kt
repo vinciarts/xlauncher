@@ -26,7 +26,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +37,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,7 +60,7 @@ import com.example.model.AppShortcutItem
 import com.example.model.HomeGestureAction
 import com.example.model.SwipeDirection
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppGestureConfigSheet(
     app: AppItem,
@@ -231,52 +234,40 @@ fun AppGestureConfigSheet(
 
                 // Tab switch: Apps vs App Shortcuts
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (!pickShortcutsTab) MaterialTheme.colorScheme.secondaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
+                    ToggleButton(
+                        checked = !pickShortcutsTab,
+                        onCheckedChange = { checked ->
+                            if (checked) {
                                 pickShortcutsTab = false
                                 filterQuery = ""
-                            },
+                            }
+                        },
+                        shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                        modifier = Modifier.weight(1f),
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Text(
-                                text = stringResource(R.string.gesture_tab_apps),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (!pickShortcutsTab) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.gesture_tab_apps),
+                            maxLines = 1,
+                        )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (pickShortcutsTab) MaterialTheme.colorScheme.secondaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
+                    ToggleButton(
+                        checked = pickShortcutsTab,
+                        onCheckedChange = { checked ->
+                            if (checked) {
                                 pickShortcutsTab = true
                                 filterQuery = ""
-                            },
+                            }
+                        },
+                        shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                        modifier = Modifier.weight(1f),
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Text(
-                                text = stringResource(R.string.gesture_tab_shortcuts),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (pickShortcutsTab) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.gesture_tab_shortcuts),
+                            maxLines = 1,
+                        )
                     }
                 }
 

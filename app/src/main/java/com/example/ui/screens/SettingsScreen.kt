@@ -22,7 +22,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
@@ -55,7 +58,7 @@ import com.example.ui.components.HomeGesturePickerSheet
 import com.example.ui.components.homeGestureActionLabel
 import com.example.ui.components.swipeDirectionLabel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsScreen(
     uiState: LauncherUiState,
@@ -164,17 +167,15 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                            (1..com.example.data.LauncherPreferencesRepository.MAX_HOME_PAGES).forEach { count ->
-                                SelectorPill(
-                                    label = "$count",
-                                    selected = settings.homePageCount == count,
-                                    testTag = "home_pages_$count",
-                                    onClick = { onSetHomePageCount(count) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
+                        val pageOptions = (1..com.example.data.LauncherPreferencesRepository.MAX_HOME_PAGES).toList()
+                        ConnectedToggleGroup(
+                            options = pageOptions,
+                            selectedOption = settings.homePageCount,
+                            labelFor = { "$it" },
+                            testTagFor = { "home_pages_$it" },
+                            onSelect = onSetHomePageCount,
+                            compactPadding = true,
+                        )
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -184,17 +185,14 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            listOf(4, 5).forEach { cols ->
-                                SelectorPill(
-                                    label = stringResource(R.string.grid_columns_option, cols),
-                                    selected = settings.homeGridColumns == cols,
-                                    testTag = "home_cols_$cols",
-                                    onClick = { onSetHomeGridColumns(cols) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
+                        val colOptions = listOf(4, 5)
+                        ConnectedToggleGroup(
+                            options = colOptions,
+                            selectedOption = settings.homeGridColumns,
+                            labelFor = { stringResource(R.string.grid_columns_option, it) },
+                            testTagFor = { "home_cols_$it" },
+                            onSelect = onSetHomeGridColumns,
+                        )
 
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -261,17 +259,13 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            listOf(4, 5).forEach { cols ->
-                                SelectorPill(
-                                    label = stringResource(R.string.grid_columns_option, cols),
-                                    selected = settings.drawerColumns == cols,
-                                    testTag = "drawer_cols_$cols",
-                                    onClick = { onSetDrawerColumns(cols) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
+                        ConnectedToggleGroup(
+                            options = listOf(4, 5),
+                            selectedOption = settings.drawerColumns,
+                            labelFor = { stringResource(R.string.grid_columns_option, it) },
+                            testTagFor = { "drawer_cols_$it" },
+                            onSelect = onSetDrawerColumns,
+                        )
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -493,33 +487,47 @@ private fun SettingsSectionCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SelectorPill(
-    label: String,
-    selected: Boolean,
-    testTag: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun <T> ConnectedToggleGroup(
+    options: List<T>,
+    selectedOption: T,
+    labelFor: @Composable (T) -> String,
+    testTagFor: (T) -> String,
+    onSelect: (T) -> Unit,
+    compactPadding: Boolean = false,
 ) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .testTag(testTag),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
+        options.forEachIndexed { index, option ->
+            val shapes = when (index) {
+                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+            }
+            ToggleButton(
+                checked = selectedOption == option,
+                onCheckedChange = { checked ->
+                    if (checked) onSelect(option)
+                },
+                shapes = shapes,
+                contentPadding = if (compactPadding) {
+                    PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                } else {
+                    ToggleButtonDefaults.ContentPadding
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(testTagFor(option)),
+            ) {
+                Text(
+                    text = labelFor(option),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
