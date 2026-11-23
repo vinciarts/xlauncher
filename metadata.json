@@ -1,0 +1,6 @@
+{
+  "name": "xlauncher",
+  "description": "Minimalist Android home launcher with per-app swipe gestures, infinite-loop paging, custom Home gestures, and native AppWidget hosting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

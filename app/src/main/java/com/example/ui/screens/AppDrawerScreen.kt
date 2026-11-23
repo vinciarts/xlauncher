@@ -1,0 +1,543 @@
+package com.example.ui.screens
+
+import android.view.ViewConfiguration
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.dp
+import com.example.R
+import com.example.model.AppActionOrigin
+import com.example.model.AppItem
+import com.example.model.DrawerTab
+import com.example.model.DrawerTabPage
+import com.example.ui.components.AppIconTile
+import com.example.ui.components.CreateDrawerTabDialog
+import com.example.ui.components.EditDrawerTabDialog
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppDrawerScreen(
+    isActive: Boolean,
+    allApps: List<AppItem>,
+    drawerTabs: List<DrawerTab>,
+    drawerTabPages: List<DrawerTabPage>,
+    filteredDrawerApps: List<AppItem>,
+    drawerSearchQuery: String,
+    autoFocusDrawerSearch: Boolean,
+    drawerColumns: Int,
+    onClose: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onAutoFocusConsumed: () -> Unit,
+    onAppClick: (AppItem) -> Unit,
+    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
+    onCreateTab: (String, List<String>) -> Unit,
+    onRenameTab: (String, String) -> Unit,
+    onSetTabApps: (String, Set<String>) -> Unit,
+    onMoveTab: (String, Int) -> Unit,
+    onDeleteTab: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BackHandler(enabled = isActive, onBack = onClose)
+
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(isActive, autoFocusDrawerSearch) {
+        if (!isActive) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        } else if (autoFocusDrawerSearch) {
+            runCatching { focusRequester.requestFocus() }
+            keyboardController?.show()
+            onAutoFocusConsumed()
+        }
+    }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val currentOnClose by rememberUpdatedState(onClose)
+    val viewConfig = remember(context) { ViewConfiguration.get(context) }
+    val pagingTouchSlopPx = viewConfig.scaledPagingTouchSlop.toFloat()
+    val minFlingVelocityPx = viewConfig.scaledMinimumFlingVelocity.toFloat()
+
+    val pages = drawerTabPages.ifEmpty {
+        listOf(
+            DrawerTabPage(
+                id = DrawerTab.ALL_TAB_ID,
+                name = "",
+                isAllTab = true,
+                apps = allApps,
+            )
+        )
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { pages.size },
+    )
+
+    var showCreateTabDialog by remember { mutableStateOf(false) }
+    var editingTabId by remember { mutableStateOf<String?>(null) }
+    var selectLastTabOnCreate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pages.size, selectLastTabOnCreate) {
+        if (selectLastTabOnCreate && pages.size > 1) {
+            selectLastTabOnCreate = false
+            pagerState.animateScrollToPage(pages.lastIndex)
+        } else if (pagerState.currentPage >= pages.size) {
+            pagerState.scrollToPage((pages.size - 1).coerceAtLeast(0))
+        }
+    }
+
+    // Pull-to-close ONLY when starting already at top (never steals overscroll or closes after scrolling back up)
+    val pullFromTopDismiss = remember(pagingTouchSlopPx, minFlingVelocityPx) {
+        var gestureScrolledList = false
+        var accumulatedDown = 0f
+        var dismissed = false
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y < 0f) {
+                    accumulatedDown = 0f
+                    dismissed = false
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (consumed.y != 0f) {
+                    gestureScrolledList = true
+                    accumulatedDown = 0f
+                    return Offset.Zero
+                }
+                if (!gestureScrolledList && !dismissed && available.y > 0f) {
+                    accumulatedDown += available.y
+                    if (accumulatedDown >= pagingTouchSlopPx * 2f) {
+                        dismissed = true
+                        accumulatedDown = 0f
+                        currentOnClose()
+                    }
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (!gestureScrolledList && !dismissed && available.y >= minFlingVelocityPx) {
+                    dismissed = true
+                    accumulatedDown = 0f
+                    currentOnClose()
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                gestureScrolledList = false
+                accumulatedDown = 0f
+                dismissed = false
+                return Velocity.Zero
+            }
+        }
+    }
+
+    val currentPageIndex = pagerState.currentPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+    val currentTabPage = pages[currentPageIndex]
+    val editingTab = editingTabId?.let { id -> drawerTabs.firstOrNull { it.id == id } }
+
+    Box(
+        contentAlignment = Alignment.TopCenter,
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .nestedScroll(pullFromTopDismiss),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 660.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
+            // Top header area (search bar + native M3 TabRow); dragging or flinging down closes drawer
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(pagingTouchSlopPx, minFlingVelocityPx) {
+                        var dragY = 0f
+                        val velocityTracker = VelocityTracker()
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                dragY = 0f
+                                velocityTracker.resetTracking()
+                            },
+                            onDragEnd = {
+                                val velocityY = velocityTracker.calculateVelocity().y
+                                if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
+                                    currentOnClose()
+                                }
+                                dragY = 0f
+                                velocityTracker.resetTracking()
+                            },
+                            onDragCancel = {
+                                dragY = 0f
+                                velocityTracker.resetTracking()
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                dragY += dragAmount
+                                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            },
+                        )
+                    },
+            ) {
+                // Native Material 3 pill search bar
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
+                        .height(48.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (drawerSearchQuery.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.search_apps_placeholder),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            BasicTextField(
+                                value = drawerSearchQuery,
+                                onValueChange = onSearchQueryChange,
+                                enabled = isActive,
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester)
+                                    .testTag("drawer_search_input"),
+                            )
+                        }
+                        if (drawerSearchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onSearchQueryChange("") },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.cd_clear_search),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Native Material 3 Scrollable TabRow + quick Edit / Add tab buttons (hidden while searching)
+                if (drawerSearchQuery.isBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 4.dp),
+                    ) {
+                        PrimaryScrollableTabRow(
+                            selectedTabIndex = currentPageIndex,
+                            edgePadding = 8.dp,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            divider = {},
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("drawer_tab_row"),
+                        ) {
+                            pages.forEachIndexed { index, tabPage ->
+                                val title = if (tabPage.isAllTab) {
+                                    stringResource(R.string.drawer_tab_all)
+                                } else {
+                                    tabPage.name
+                                }
+                                Tab(
+                                    selected = currentPageIndex == index,
+                                    onClick = {
+                                        scope.launch { pagerState.animateScrollToPage(index) }
+                                    },
+                                    text = {
+                                        Text(
+                                            text = title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("drawer_tab_${tabPage.id}"),
+                                )
+                            }
+                        }
+
+                        if (!currentTabPage.isAllTab) {
+                            IconButton(
+                                onClick = { editingTabId = currentTabPage.id },
+                                modifier = Modifier.testTag("drawer_edit_tab_button"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = stringResource(R.string.cd_edit_drawer_tab),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { showCreateTabDialog = true },
+                            modifier = Modifier.testTag("drawer_add_tab_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.cd_add_drawer_tab),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+
+            if (drawerSearchQuery.isNotBlank()) {
+                if (filteredDrawerApps.isEmpty()) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.empty_search_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    DrawerAppsVerticalGrid(
+                        apps = filteredDrawerApps,
+                        cols = drawerColumns,
+                        tabIndex = 0,
+                        onAppClick = onAppClick,
+                        onAppLongClick = onAppLongClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                }
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    beyondViewportPageCount = 1,
+                    key = { index -> pages.getOrNull(index)?.id ?: index },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("drawer_pager"),
+                ) { pageIndex ->
+                    val tabPage = pages.getOrElse(pageIndex) { pages.first() }
+                    if (tabPage.apps.isEmpty()) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 32.dp),
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = stringResource(R.string.empty_drawer_tab_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (!tabPage.isAllTab) {
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    FilledTonalButton(
+                                        onClick = { editingTabId = tabPage.id },
+                                        modifier = Modifier.testTag("empty_tab_add_apps_button"),
+                                    ) {
+                                        Text(stringResource(R.string.drawer_tab_add_apps_action))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        DrawerAppsVerticalGrid(
+                            apps = tabPage.apps,
+                            cols = drawerColumns,
+                            tabIndex = pageIndex,
+                            onAppClick = onAppClick,
+                            onAppLongClick = onAppLongClick,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateTabDialog) {
+        CreateDrawerTabDialog(
+            allApps = allApps,
+            onConfirm = { name, appKeys ->
+                showCreateTabDialog = false
+                selectLastTabOnCreate = true
+                onCreateTab(name, appKeys)
+            },
+            onDismiss = { showCreateTabDialog = false },
+        )
+    }
+
+    if (editingTab != null) {
+        val customIdx = drawerTabs.indexOfFirst { it.id == editingTab.id }
+        EditDrawerTabDialog(
+            tab = editingTab,
+            canMoveLeft = customIdx > 0,
+            canMoveRight = customIdx in 0 until drawerTabs.lastIndex,
+            allApps = allApps,
+            onSave = { newName, appKeys ->
+                if (newName != editingTab.name) {
+                    onRenameTab(editingTab.id, newName)
+                }
+                onSetTabApps(editingTab.id, appKeys)
+                editingTabId = null
+            },
+            onMoveLeft = { onMoveTab(editingTab.id, -1) },
+            onMoveRight = { onMoveTab(editingTab.id, +1) },
+            onDelete = {
+                editingTabId = null
+                onDeleteTab(editingTab.id)
+            },
+            onDismiss = { editingTabId = null },
+        )
+    }
+}
+
+@Composable
+private fun DrawerAppsVerticalGrid(
+    apps: List<AppItem>,
+    cols: Int,
+    tabIndex: Int,
+    onAppClick: (AppItem) -> Unit,
+    onAppLongClick: (AppItem, AppActionOrigin, Int, Rect?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val iconSize = if (cols == 5) 48.dp else 52.dp
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(cols),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier,
+    ) {
+        items(
+            items = apps,
+            key = { it.componentKey },
+            contentType = { "drawer_app" },
+        ) { app ->
+            AppIconTile(
+                app = app,
+                boundDirections = emptySet(),
+                showLabel = true,
+                onWallpaper = false,
+                iconSize = iconSize,
+                onClick = { onAppClick(app) },
+                onLongClick = { bounds ->
+                    onAppLongClick(app, AppActionOrigin.DRAWER, tabIndex, bounds)
+                },
+                onSwipe = {},
+            )
+        }
+    }
+}

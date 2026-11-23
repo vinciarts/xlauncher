@@ -1,0 +1,147 @@
+<resources>
+    <string name="app_name">xlauncher</string>
+    <string name="search_apps_placeholder">Search apps…</string>
+    <string name="drawer_title">App drawer</string>
+    <string name="drawer_page_indicator">%1$d / %2$d</string>
+    <string name="empty_home_page_hint">Long-press an app in the drawer to pin it here</string>
+    <string name="empty_drawer_tab_hint">No apps in this tab yet</string>
+    <string name="empty_search_hint">No matching apps</string>
+
+    <!-- App Context Menu -->
+    <string name="action_launch">Open app</string>
+    <string name="action_dock_gestures">Swipe gestures</string>
+    <string name="action_dock_gestures_none">No gestures set</string>
+    <string name="action_pin_home">Add to Home screen</string>
+    <string name="action_unpin_home">Remove from Home screen</string>
+    <string name="action_move_home_page">Move to another page</string>
+    <string name="action_pin_dock">Add to Dock</string>
+    <string name="action_unpin_dock">Remove from Dock</string>
+    <string name="action_manage_drawer_tabs">Drawer tabs</string>
+    <string name="action_app_info">App info</string>
+    <string name="action_uninstall">Uninstall</string>
+    <string name="action_enable_app_shortcuts">Set as default home for shortcuts</string>
+
+    <!-- Icon Swipe Gesture Config -->
+    <string name="gesture_dialog_title">Swipe gestures · %1$s</string>
+    <string name="gesture_dialog_subtitle">Swipe in any direction on this icon to launch an app or shortcut</string>
+    <string name="gesture_up">Swipe up ↑</string>
+    <string name="gesture_down">Swipe down ↓</string>
+    <string name="gesture_left">Swipe left ←</string>
+    <string name="gesture_right">Swipe right →</string>
+    <string name="gesture_unbound">Not set</string>
+    <string name="gesture_clear">Clear</string>
+    <string name="gesture_pick_app_title">Choose app for %1$s</string>
+    <string name="gesture_short_up">Up: %1$s</string>
+    <string name="gesture_short_down">Down: %1$s</string>
+    <string name="gesture_short_left">Left: %1$s</string>
+    <string name="gesture_short_right">Right: %1$s</string>
+
+    <!-- Move Page Dialog -->
+    <string name="move_page_title">Move to page</string>
+    <string name="page_number_label">Page %1$d</string>
+    <string name="page_add_new">+ New page %1$d</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Home settings</string>
+    <string name="settings_default_launcher">Default home app</string>
+    <string name="settings_default_yes">Set as default home app</string>
+    <string name="settings_default_no">Not set as default</string>
+    <string name="settings_switch_default">Change</string>
+
+    <string name="settings_home_section">Home screen</string>
+    <string name="settings_home_pages">Pages</string>
+    <string name="settings_home_loop">Infinite loop scrolling</string>
+    <string name="settings_home_columns">Columns</string>
+    <string name="grid_columns_option">%1$d cols</string>
+    <string name="grid_rows_option">%1$d rows</string>
+
+    <string name="settings_home_gestures_section">Home gestures</string>
+    <string name="home_gesture_picker_title">Action for %1$s</string>
+    <string name="home_gesture_group_launcher">Launcher</string>
+    <string name="home_gesture_group_system">System</string>
+    <string name="home_gesture_group_app">Apps</string>
+    <string name="home_action_none">None</string>
+    <string name="home_action_none_page">Default paging</string>
+    <string name="home_action_open_drawer">Open app drawer</string>
+    <string name="home_action_open_search">Search apps</string>
+    <string name="home_action_open_settings">Home settings</string>
+    <string name="home_action_go_first_page">Go to first page</string>
+    <string name="home_action_prev_page">Previous page</string>
+    <string name="home_action_next_page">Next page</string>
+    <string name="home_action_expand_notifications">Expand notifications</string>
+    <string name="home_action_expand_quick_settings">Expand Quick Settings</string>
+    <string name="home_action_toggle_flashlight">Toggle flashlight</string>
+    <string name="home_action_volume_panel">Volume controls</string>
+    <string name="home_action_toggle_vibrate">Toggle ring / vibrate</string>
+    <string name="home_action_voice_assist">Voice assistant / Search</string>
+    <string name="home_action_open_camera">Open camera</string>
+    <string name="home_action_open_dialer">Open phone</string>
+    <string name="home_action_system_settings">System settings</string>
+    <string name="home_action_wifi_panel">Internet / Wi-Fi panel</string>
+    <string name="home_action_bluetooth_settings">Bluetooth settings</string>
+    <string name="home_action_wallpaper_picker">Change wallpaper</string>
+    <string name="home_action_pick_app">Launch app</string>
+    <string name="home_action_pick_shortcut">Launch app shortcut</string>
+    <string name="home_action_launch_app">Open %1$s</string>
+    <string name="home_action_shortcut_fallback">App shortcut</string>
+    <string name="gesture_tab_apps">Apps</string>
+    <string name="gesture_tab_shortcuts">Shortcuts</string>
+    <string name="gesture_pick_shortcut_title">Choose shortcut for %1$s</string>
+    <string name="search_shortcuts_placeholder">Search shortcuts or apps…</string>
+    <string name="shortcuts_need_default_launcher">Set as default home app to load app shortcuts from installed apps</string>
+    <string name="shortcuts_empty_hint">No app shortcuts available</string>
+
+    <string name="settings_drawer_section">App drawer</string>
+    <string name="settings_drawer_columns">Columns</string>
+    <string name="settings_drawer_tabs">Tabs</string>
+    <string name="settings_drawer_tabs_empty">No custom tabs yet. Create tabs to group apps in the drawer.</string>
+    <string name="drawer_tab_all">All</string>
+    <string name="drawer_tab_create_title">New tab</string>
+    <string name="drawer_tab_edit_title">Edit tab</string>
+    <string name="drawer_tab_name_label">Tab name</string>
+    <string name="drawer_tab_name_placeholder">e.g. Work, Tools, Media</string>
+    <string name="drawer_tab_pick_apps_label">Apps (%1$d selected)</string>
+    <string name="drawer_tab_app_count">%1$d apps</string>
+    <string name="drawer_tab_add_apps_action">Add apps</string>
+    <string name="drawer_tab_delete">Delete tab</string>
+    <string name="drawer_tab_add_short">Add</string>
+    <string name="drawer_app_tabs_title">Tabs · %1$s</string>
+    <string name="drawer_tabs_empty_assign_hint">Create a custom tab below to organize this app.</string>
+    <string name="drawer_tabs_limit_message">Up to 12 custom tabs allowed</string>
+
+    <string name="dialog_done">Done</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dock_full_message">Dock can hold up to 5 apps</string>
+    <string name="launch_error_message">Unable to open app</string>
+    <string name="shortcut_launch_error">Unable to launch shortcut. Make sure this is your default home app</string>
+    <string name="expand_status_bar_error">Your system restricted expanding the notification shade</string>
+    <string name="system_action_unavailable">This system action is not available on your device</string>
+    <string name="cd_open_settings">Home settings</string>
+    <string name="cd_open_drawer">Open app drawer</string>
+    <string name="cd_close_drawer">Close app drawer</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_add_drawer_tab">Add tab</string>
+    <string name="cd_edit_drawer_tab">Edit current tab</string>
+    <string name="cd_move_tab_left">Move tab left</string>
+    <string name="cd_move_tab_right">Move tab right</string>
+    <string name="cd_back">Back</string>
+
+    <!-- Desktop Empty Space Menu & Widgets -->
+    <string name="home_menu_add_widget">Widgets</string>
+    <string name="home_menu_wallpaper">Wallpaper</string>
+    <string name="home_menu_settings">Home settings</string>
+    <string name="widget_picker_title">Widgets</string>
+    <string name="search_widgets_placeholder">Search widgets or apps…</string>
+    <string name="widget_picker_empty">No widgets available</string>
+    <string name="widget_count_suffix">%1$d widgets</string>
+    <string name="widget_size_label">%1$d × %2$d</string>
+    <string name="widget_menu_configure">Configure widget</string>
+    <string name="widget_menu_resize">Resize</string>
+    <string name="widget_menu_move_page">Move to another page</string>
+    <string name="widget_menu_remove">Remove</string>
+    <string name="widget_resize_title">Resize widget</string>
+    <string name="widget_resize_width">Width (columns)</string>
+    <string name="widget_resize_height">Height (rows)</string>
+    <string name="widget_add_error">Unable to add widget</string>
+    <string name="widget_unavailable_label">Widget unavailable</string>
+</resources>
