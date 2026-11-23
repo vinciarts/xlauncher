@@ -118,6 +118,7 @@
     <string name="dialog_done">完成</string>
     <string name="dialog_cancel">取消</string>
     <string name="dock_full_message">Dock 最多固定 5 个应用</string>
+    <string name="home_page_full_message">当前桌面页空间已满</string>
     <string name="launch_error_message">无法打开该应用</string>
     <string name="shortcut_launch_error">无法启动该快捷方式，请确认已设为默认桌面</string>
     <string name="expand_status_bar_error">当前系统限制了自动展开通知栏</string>
@@ -136,6 +137,11 @@
     <string name="home_menu_add_widget">添加小组件</string>
     <string name="home_menu_wallpaper">更换壁纸</string>
     <string name="home_menu_settings">桌面设置</string>
+    <string name="home_menu_add_page_start">在最前添加页</string>
+    <string name="home_menu_add_page_end">在最后添加页</string>
+    <string name="home_menu_delete_page">删除当前页</string>
+    <string name="home_pages_limit_message">最多支持 %1$d 个桌面页</string>
+    <string name="drag_new_page_hint">松手以新建此页</string>
     <string name="widget_picker_title">添加小组件</string>
     <string name="widget_picker_show_all">全部小组件</string>
     <string name="search_widgets_placeholder">搜索小组件或应用…</string>

@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.example.model.WidgetCatalogItem
+import com.example.model.WidgetResizeSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.Collator
@@ -32,7 +33,12 @@ import kotlin.math.hypot
 class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
     var onLongPressListener: ((Rect) -> Unit)? = null
+    var onLongPressArmedListener: (() -> Unit)? = null
     var onTouchDownListener: (() -> Unit)? = null
+    var onDragStartListener: ((Rect, androidx.compose.ui.geometry.Offset) -> Unit)? = null
+    var onDragMoveListener: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
+    var onDragEndListener: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
+    var onDragCancelListener: (() -> Unit)? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -40,46 +46,74 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
 
     private var downX = 0f
     private var downY = 0f
+    private var lastRawX = 0f
+    private var lastRawY = 0f
+    private var longPressRawX = 0f
+    private var longPressRawY = 0f
     private var longPressTriggered = false
+    private var dragStarted = false
     private var lastWidthDp = -1
     private var lastHeightDp = -1
 
-    private val longPressRunnable = Runnable {
-        longPressTriggered = true
-        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    private fun currentBoundsInWindow(): Rect {
         val loc = IntArray(2)
         getLocationInWindow(loc)
-        val bounds = Rect(
+        return Rect(
             left = loc[0].toFloat(),
             top = loc[1].toFloat(),
             right = (loc[0] + width).toFloat(),
             bottom = (loc[1] + height).toFloat(),
         )
-        onLongPressListener?.invoke(bounds)
+    }
+
+    private val longPressRunnable = Runnable {
+        longPressTriggered = true
+        dragStarted = false
+        longPressRawX = lastRawX
+        longPressRawY = lastRawY
+        parent?.requestDisallowInterceptTouchEvent(true)
+        onLongPressArmedListener?.invoke()
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 longPressTriggered = false
+                dragStarted = false
                 downX = ev.x
                 downY = ev.y
+                lastRawX = ev.rawX
+                lastRawY = ev.rawY
                 onTouchDownListener?.invoke()
                 handler.removeCallbacks(longPressRunnable)
                 handler.postDelayed(longPressRunnable, longPressTimeout)
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (longPressTriggered) return true
+                lastRawX = ev.rawX
+                lastRawY = ev.rawY
+                if (longPressTriggered) {
+                    handlePostLongPressMove(ev)
+                    return true
+                }
                 if (hypot((ev.x - downX).toDouble(), (ev.y - downY).toDouble()) > touchSlop) {
                     handler.removeCallbacks(longPressRunnable)
                 }
             }
 
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(longPressRunnable)
                 if (longPressTriggered) {
-                    longPressTriggered = false
+                    handlePostLongPressUp(ev)
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (longPressTriggered) {
+                    handlePostLongPressCancel()
                     return true
                 }
             }
@@ -88,18 +122,89 @@ class LauncherAppWidgetHostView(context: Context) : AppWidgetHostView(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            handler.removeCallbacks(longPressRunnable)
-            if (longPressTriggered) {
-                longPressTriggered = false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                // Only reached when no clickable child inside the widget consumed ACTION_DOWN.
+                // Return true so we still receive MOVE/UP/CANCEL for long-press menu and drag.
                 return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                lastRawX = event.rawX
+                lastRawY = event.rawY
+                if (longPressTriggered) {
+                    handlePostLongPressMove(event)
+                    return true
+                }
+                if (hypot((event.x - downX).toDouble(), (event.y - downY).toDouble()) > touchSlop) {
+                    handler.removeCallbacks(longPressRunnable)
+                }
+            }
+
+            MotionEvent.ACTION_UP -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (longPressTriggered) {
+                    handlePostLongPressUp(event)
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (longPressTriggered) {
+                    handlePostLongPressCancel()
+                    return true
+                }
             }
         }
         return if (longPressTriggered) true else super.onTouchEvent(event)
     }
 
+    private fun eventInWindow(ev: MotionEvent): androidx.compose.ui.geometry.Offset {
+        val loc = IntArray(2)
+        getLocationInWindow(loc)
+        return androidx.compose.ui.geometry.Offset(loc[0] + ev.x, loc[1] + ev.y)
+    }
+
+    private fun handlePostLongPressMove(ev: MotionEvent) {
+        val windowPos = eventInWindow(ev)
+        if (!dragStarted) {
+            if (hypot((ev.rawX - longPressRawX).toDouble(), (ev.rawY - longPressRawY).toDouble()) > touchSlop) {
+                dragStarted = true
+                onDragStartListener?.invoke(currentBoundsInWindow(), windowPos)
+            }
+        } else {
+            onDragMoveListener?.invoke(windowPos)
+        }
+    }
+
+    private fun handlePostLongPressUp(ev: MotionEvent) {
+        val wasDragging = dragStarted
+        longPressTriggered = false
+        dragStarted = false
+        parent?.requestDisallowInterceptTouchEvent(false)
+        if (wasDragging) {
+            onDragEndListener?.invoke(eventInWindow(ev))
+        } else {
+            onLongPressListener?.invoke(currentBoundsInWindow())
+        }
+    }
+
+    private fun handlePostLongPressCancel() {
+        val wasArmedOrDragging = longPressTriggered || dragStarted
+        longPressTriggered = false
+        dragStarted = false
+        parent?.requestDisallowInterceptTouchEvent(false)
+        if (wasArmedOrDragging) {
+            onDragCancelListener?.invoke()
+        }
+    }
+
     override fun onDetachedFromWindow() {
         handler.removeCallbacks(longPressRunnable)
+        if (longPressTriggered || dragStarted) {
+            handlePostLongPressCancel()
+        }
         super.onDetachedFromWindow()
     }
 
@@ -235,7 +340,12 @@ class WidgetHostController(private val context: Context) {
     fun clearViewCache() {
         viewCache.values.forEach { view ->
             view.onLongPressListener = null
+            view.onLongPressArmedListener = null
             view.onTouchDownListener = null
+            view.onDragStartListener = null
+            view.onDragMoveListener = null
+            view.onDragEndListener = null
+            view.onDragCancelListener = null
             (view.parent as? ViewGroup)?.removeView(view)
         }
         viewCache.clear()
@@ -258,6 +368,52 @@ class WidgetHostController(private val context: Context) {
             ((info.minHeight + 30) / 70).coerceIn(1, MAX_WIDGET_ROWS)
         }
         return spanX to spanY
+    }
+
+    fun getResizeSpec(appWidgetId: Int, gridColumns: Int): WidgetResizeSpec {
+        val cols = gridColumns.coerceIn(1, 5)
+        val info = getProviderInfo(appWidgetId) ?: return WidgetResizeSpec(
+            canResizeHorizontal = false,
+            canResizeVertical = false,
+            minSpanX = 1,
+            maxSpanX = cols,
+            minSpanY = 1,
+            maxSpanY = MAX_WIDGET_ROWS,
+        )
+        val mode = info.resizeMode
+        val canH = (mode and AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
+        val canV = (mode and AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
+
+        val minSpanX = if (info.minResizeWidth > 0) {
+            ((info.minResizeWidth + 30) / 70).coerceIn(1, cols)
+        } else {
+            1
+        }
+        val maxSpanX = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeWidth > 0) {
+            ((info.maxResizeWidth + 30) / 70).coerceIn(minSpanX, cols)
+        } else {
+            cols
+        }
+
+        val minSpanY = if (info.minResizeHeight > 0) {
+            ((info.minResizeHeight + 30) / 70).coerceIn(1, MAX_WIDGET_ROWS)
+        } else {
+            1
+        }
+        val maxSpanY = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeHeight > 0) {
+            ((info.maxResizeHeight + 30) / 70).coerceIn(minSpanY, MAX_WIDGET_ROWS)
+        } else {
+            MAX_WIDGET_ROWS
+        }
+
+        return WidgetResizeSpec(
+            canResizeHorizontal = canH,
+            canResizeVertical = canV,
+            minSpanX = minSpanX,
+            maxSpanX = maxSpanX,
+            minSpanY = minSpanY,
+            maxSpanY = maxSpanY,
+        )
     }
 
     fun getCachedPreview(providerComponent: String): ImageBitmap? =

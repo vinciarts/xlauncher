@@ -164,8 +164,8 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                            (1..6).forEach { count ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                            (1..com.example.data.LauncherPreferencesRepository.MAX_HOME_PAGES).forEach { count ->
                                 SelectorPill(
                                     label = "$count",
                                     selected = settings.homePageCount == count,

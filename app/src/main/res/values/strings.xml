@@ -118,6 +118,7 @@
     <string name="dialog_done">Done</string>
     <string name="dialog_cancel">Cancel</string>
     <string name="dock_full_message">Dock can hold up to 5 apps</string>
+    <string name="home_page_full_message">No free space on this Home page</string>
     <string name="launch_error_message">Unable to open app</string>
     <string name="shortcut_launch_error">Unable to launch shortcut. Make sure this is your default home app</string>
     <string name="expand_status_bar_error">Your system restricted expanding the notification shade</string>
@@ -136,6 +137,11 @@
     <string name="home_menu_add_widget">Widgets</string>
     <string name="home_menu_wallpaper">Wallpaper</string>
     <string name="home_menu_settings">Home settings</string>
+    <string name="home_menu_add_page_start">Add page at start</string>
+    <string name="home_menu_add_page_end">Add page at end</string>
+    <string name="home_menu_delete_page">Delete current page</string>
+    <string name="home_pages_limit_message">Up to %1$d Home pages allowed</string>
+    <string name="drag_new_page_hint">Release to create new page</string>
     <string name="widget_picker_title">Widgets</string>
     <string name="widget_picker_show_all">All widgets</string>
     <string name="search_widgets_placeholder">Search widgets or apps…</string>

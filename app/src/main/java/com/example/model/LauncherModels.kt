@@ -184,6 +184,24 @@ data class PlacedWidget(
     val spanX: Int,
     val spanY: Int,
     val providerComponent: String,
+    val cellX: Int = -1,
+    val cellY: Int = -1,
+)
+
+@Immutable
+data class PlacedHomeApp(
+    val componentKey: String,
+    val pageIndex: Int,
+    val cellX: Int = -1,
+    val cellY: Int = -1,
+)
+
+@Immutable
+data class HomeAppSlot(
+    val app: AppItem,
+    val pageIndex: Int,
+    val cellX: Int,
+    val cellY: Int,
 )
 
 @Immutable
@@ -203,6 +221,19 @@ data class WidgetMenuTarget(
     val widget: PlacedWidget,
     val anchorBounds: Rect? = null,
 )
+
+@Immutable
+data class WidgetResizeSpec(
+    val canResizeHorizontal: Boolean,
+    val canResizeVertical: Boolean,
+    val minSpanX: Int,
+    val maxSpanX: Int,
+    val minSpanY: Int,
+    val maxSpanY: Int,
+) {
+    val isResizable: Boolean
+        get() = canResizeHorizontal || canResizeVertical
+}
 
 @Immutable
 data class DrawerTab(
@@ -230,6 +261,7 @@ data class LauncherSettings(
     val homeLoopPaging: Boolean = true,
     val homeGridColumns: Int = 4,
     val homePages: Map<Int, List<String>> = emptyMap(),
+    val placedHomeApps: List<PlacedHomeApp> = emptyList(),
     val placedWidgets: List<PlacedWidget> = emptyList(),
     val dockKeys: List<String> = emptyList(),
     // Desktop-wide per-app swipe gestures: Map<appComponentKey, Map<SwipeDirection, targetAppOrShortcutKey>>
@@ -260,7 +292,7 @@ data class LauncherUiState(
     val hasShortcutHostPermission: Boolean = false,
     val allShortcuts: List<AppShortcutItem> = emptyList(),
     val shortcutsByTargetKey: Map<String, AppShortcutItem> = emptyMap(),
-    val homePageApps: List<List<AppItem>> = listOf(emptyList(), emptyList()),
+    val homePageApps: List<List<HomeAppSlot>> = listOf(emptyList(), emptyList()),
     val homePageWidgets: List<List<PlacedWidget>> = listOf(emptyList(), emptyList()),
     val dockApps: List<AppItem> = emptyList(),
     val drawerTabPages: List<DrawerTabPage> = listOf(
@@ -285,7 +317,7 @@ data class LauncherUiState(
     val appTabsTarget: AppItem? = null,
     val homeEmptyMenuAnchor: Offset? = null,
     val widgetMenuTarget: WidgetMenuTarget? = null,
-    val resizeWidgetTarget: PlacedWidget? = null,
+    val resizingWidgetId: Int? = null,
     val moveWidgetTarget: PlacedWidget? = null,
     val widgetPickerPackageFilter: String? = null,
     val homePageCommand: HomePageCommand? = null,

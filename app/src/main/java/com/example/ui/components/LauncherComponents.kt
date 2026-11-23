@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.os.SystemClock
 import android.view.ViewConfiguration
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -8,6 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +73,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -121,9 +130,11 @@ fun AppIconImage(
 
 /**
  * Unified App Icon tile used on Home, Dock, and App Drawer.
- * - Uses official Compose combinedClickable for tap and long-press (zero custom timers or animations).
- * - Only attaches a directional swipe recognizer when boundDirections is non-empty, using Android
- *   ViewConfiguration standards (touchSlop, scaledPagingTouchSlop, scaledMinimumFlingVelocity + VelocityTracker).
+ * - When drag callbacks are omitted (Dock / App Drawer), uses official Compose combinedClickable
+ *   plus optional directional swipe recognizer when boundDirections is non-empty.
+ * - When drag callbacks are provided (Home screen), uses a unified Android ViewConfiguration
+ *   gesture detector supporting quick tap, bound 4-direction swipes, long-press menu (hold + release),
+ *   and AOSP long-press-and-drag repositioning (hold + slide > touchSlop).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -137,11 +148,16 @@ fun AppIconTile(
     onClick: () -> Unit,
     onLongClick: (Rect?) -> Unit,
     onSwipe: (SwipeDirection) -> Unit,
+    onDragStart: ((Rect, Offset) -> Unit)? = null,
+    onDragMove: ((Offset) -> Unit)? = null,
+    onDragEnd: ((Offset) -> Unit)? = null,
+    onDragCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val hasGestures = boundDirections.isNotEmpty()
+    val dragEnabled = onDragStart != null
     val coordsHolder = remember { CoordinatesHolder() }
     var longPressTriggeredInGesture by remember { mutableStateOf(false) }
 
@@ -154,92 +170,265 @@ fun AppIconTile(
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongClick by rememberUpdatedState(onLongClick)
     val currentOnSwipe by rememberUpdatedState(onSwipe)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDragMove by rememberUpdatedState(onDragMove)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnDragCancel by rememberUpdatedState(onDragCancel)
 
-    val swipeModifier = if (hasGestures) {
-        Modifier.pointerInput(app.componentKey, pagingTouchSlopPx, minFlingVelocityPx) {
-            val touchSlop = viewConfiguration.touchSlop
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                longPressTriggeredInGesture = false
-                currentOnDownPointer?.invoke(down.id.value, currentBoundDirections)
+    val interactionModifier = if (dragEnabled) {
+        val interactionSource = remember { MutableInteractionSource() }
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .indication(interactionSource, ripple())
+            .semantics {
+                role = Role.Button
+                onClick(label = app.label) {
+                    currentOnClick()
+                    true
+                }
+            }
+            .pointerInput(app.componentKey, pagingTouchSlopPx, minFlingVelocityPx) {
+                val touchSlop = viewConfiguration.touchSlop
+                val longPressTimeoutMs = viewConfiguration.longPressTimeoutMillis
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    currentOnDownPointer?.invoke(down.id.value, currentBoundDirections)
+                    val pressInteraction = PressInteraction.Press(down.position)
+                    interactionSource.tryEmit(pressInteraction)
 
-                val velocityTracker = VelocityTracker()
-                velocityTracker.addPosition(down.uptimeMillis, down.position)
-                var claimedDir: SwipeDirection? = null
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+                    val deadline = SystemClock.uptimeMillis() + longPressTimeoutMs
+                    var claimedSwipeDir: SwipeDirection? = null
+                    var longPressFired = false
+                    var lastPos = down.position
+                    var pressReleased = false
 
-                while (true) {
-                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (longPressTriggeredInGesture) break
-
-                    velocityTracker.addPosition(change.uptimeMillis, change.position)
-                    val totalDrag = change.position - down.position
-                    val absX = abs(totalDrag.x)
-                    val absY = abs(totalDrag.y)
-
-                    if (!change.pressed) {
-                        val dir = claimedDir
-                        if (dir != null) {
+                    while (true) {
+                        if (claimedSwipeDir != null) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null) {
+                                interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                pressReleased = true
+                                break
+                            }
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val totalDrag = change.position - down.position
+                            val absX = abs(totalDrag.x)
+                            val absY = abs(totalDrag.y)
+                            if (!change.pressed) {
+                                change.consume()
+                                interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                pressReleased = true
+                                val dir = claimedSwipeDir!!
+                                val velocity = velocityTracker.calculateVelocity()
+                                val primaryDist = if (dir == SwipeDirection.UP || dir == SwipeDirection.DOWN) absY else absX
+                                val directionalVelocity = when (dir) {
+                                    SwipeDirection.UP -> -velocity.y
+                                    SwipeDirection.DOWN -> velocity.y
+                                    SwipeDirection.LEFT -> -velocity.x
+                                    SwipeDirection.RIGHT -> velocity.x
+                                }
+                                if (primaryDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentOnSwipe(dir)
+                                }
+                                break
+                            }
                             change.consume()
-                            val velocity = velocityTracker.calculateVelocity()
-                            val primaryDist = if (dir == SwipeDirection.UP || dir == SwipeDirection.DOWN) absY else absX
-                            val directionalVelocity = when (dir) {
-                                SwipeDirection.UP -> -velocity.y
-                                SwipeDirection.DOWN -> velocity.y
-                                SwipeDirection.LEFT -> -velocity.x
-                                SwipeDirection.RIGHT -> velocity.x
+                        } else {
+                            val remaining = deadline - SystemClock.uptimeMillis()
+                            if (remaining <= 0L) {
+                                longPressFired = true
+                                break
                             }
-                            if (primaryDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentOnSwipe(dir)
+                            val event = withTimeoutOrNull(remaining) {
+                                awaitPointerEvent()
+                            }
+                            if (event == null) {
+                                longPressFired = true
+                                break
+                            }
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null || change.isConsumed) {
+                                interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                pressReleased = true
+                                break
+                            }
+                            lastPos = change.position
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val totalDrag = change.position - down.position
+                            val absX = abs(totalDrag.x)
+                            val absY = abs(totalDrag.y)
+
+                            if (!change.pressed) {
+                                if (totalDrag.getDistance() <= touchSlop) {
+                                    change.consume()
+                                    interactionSource.tryEmit(PressInteraction.Release(pressInteraction))
+                                    pressReleased = true
+                                    currentOnClick()
+                                } else {
+                                    interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                    pressReleased = true
+                                }
+                                break
+                            }
+
+                            if (totalDrag.getDistance() > touchSlop) {
+                                val dir = if (absY >= absX) {
+                                    if (totalDrag.y < 0f) SwipeDirection.UP else SwipeDirection.DOWN
+                                } else {
+                                    if (totalDrag.x < 0f) SwipeDirection.LEFT else SwipeDirection.RIGHT
+                                }
+                                if (dir in currentBoundDirections) {
+                                    claimedSwipeDir = dir
+                                    change.consume()
+                                } else {
+                                    interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                    pressReleased = true
+                                    break
+                                }
                             }
                         }
-                        break
                     }
 
-                    if (claimedDir == null && totalDrag.getDistance() > touchSlop) {
-                        val dir = if (absY >= absX) {
-                            if (totalDrag.y < 0f) SwipeDirection.UP else SwipeDirection.DOWN
-                        } else {
-                            if (totalDrag.x < 0f) SwipeDirection.LEFT else SwipeDirection.RIGHT
-                        }
-                        if (dir in currentBoundDirections) {
-                            claimedDir = dir
-                        } else {
-                            break
-                        }
-                    }
+                    if (longPressFired) {
+                        // Claim all 4 directions for this pointer so HomeScreen gestures never steal post-long-press drag
+                        currentOnDownPointer?.invoke(down.id.value, SwipeDirection.entries.toSet())
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val startBounds = coordsHolder.coords?.takeIf { it.isAttached }?.boundsInWindow()
+                        val anchorWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(lastPos) ?: lastPos
+                        var dragStarted = false
+                        var latestWindowPos = anchorWindow
 
-                    if (claimedDir != null) {
-                        change.consume()
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null) {
+                                if (dragStarted) currentOnDragCancel?.invoke()
+                                break
+                            }
+                            change.consume()
+                            val nowWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
+                                ?: latestWindowPos
+                            latestWindowPos = nowWindow
+
+                            if (!change.pressed) {
+                                if (dragStarted) {
+                                    currentOnDragEnd?.invoke(nowWindow)
+                                } else {
+                                    currentOnLongClick(startBounds)
+                                }
+                                break
+                            }
+
+                            if (!dragStarted) {
+                                if ((nowWindow - anchorWindow).getDistance() > touchSlop) {
+                                    dragStarted = true
+                                    interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                                    pressReleased = true
+                                    currentOnDragStart?.invoke(startBounds ?: Rect.Zero, nowWindow)
+                                }
+                            } else {
+                                currentOnDragMove?.invoke(nowWindow)
+                            }
+                        }
+                        if (!pressReleased) {
+                            interactionSource.tryEmit(PressInteraction.Release(pressInteraction))
+                        }
                     }
                 }
             }
-        }
     } else {
-        Modifier
+        val swipeModifier = if (hasGestures) {
+            Modifier.pointerInput(app.componentKey, pagingTouchSlopPx, minFlingVelocityPx) {
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    longPressTriggeredInGesture = false
+                    currentOnDownPointer?.invoke(down.id.value, currentBoundDirections)
+
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+                    var claimedDir: SwipeDirection? = null
+
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (longPressTriggeredInGesture) break
+
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        val totalDrag = change.position - down.position
+                        val absX = abs(totalDrag.x)
+                        val absY = abs(totalDrag.y)
+
+                        if (!change.pressed) {
+                            val dir = claimedDir
+                            if (dir != null) {
+                                change.consume()
+                                val velocity = velocityTracker.calculateVelocity()
+                                val primaryDist = if (dir == SwipeDirection.UP || dir == SwipeDirection.DOWN) absY else absX
+                                val directionalVelocity = when (dir) {
+                                    SwipeDirection.UP -> -velocity.y
+                                    SwipeDirection.DOWN -> velocity.y
+                                    SwipeDirection.LEFT -> -velocity.x
+                                    SwipeDirection.RIGHT -> velocity.x
+                                }
+                                if (primaryDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentOnSwipe(dir)
+                                }
+                            }
+                            break
+                        }
+
+                        if (claimedDir == null && totalDrag.getDistance() > touchSlop) {
+                            val dir = if (absY >= absX) {
+                                if (totalDrag.y < 0f) SwipeDirection.UP else SwipeDirection.DOWN
+                            } else {
+                                if (totalDrag.x < 0f) SwipeDirection.LEFT else SwipeDirection.RIGHT
+                            }
+                            if (dir in currentBoundDirections) {
+                                claimedDir = dir
+                            } else {
+                                break
+                            }
+                        }
+
+                        if (claimedDir != null) {
+                            change.consume()
+                        }
+                    }
+                }
+            }
+        } else {
+            Modifier
+        }
+
+        swipeModifier.combinedClickable(
+            onClick = { currentOnClick() },
+            onLongClick = {
+                longPressTriggeredInGesture = true
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                val bounds = coordsHolder.coords?.takeIf { it.isAttached }?.boundsInWindow()
+                currentOnLongClick(bounds)
+            },
+        )
     }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
         modifier = modifier
             .onGloballyPositioned { coordsHolder.coords = it }
             .minimumInteractiveComponentSize()
-            .then(swipeModifier)
-            .combinedClickable(
-                onClick = { currentOnClick() },
-                onLongClick = {
-                    longPressTriggeredInGesture = true
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    val bounds = coordsHolder.coords?.takeIf { it.isAttached }?.boundsInWindow()
-                    currentOnLongClick(bounds)
-                },
-            )
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .then(interactionModifier)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
     ) {
         AppIconImage(app = app, size = iconSize)
         if (showLabel) {
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             val labelStyle = if (onWallpaper) {
                 MaterialTheme.typography.labelSmall.copy(
                     color = Color.White,

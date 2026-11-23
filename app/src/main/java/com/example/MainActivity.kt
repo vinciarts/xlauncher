@@ -55,7 +55,6 @@ import com.example.ui.components.AssignAppTabsDialog
 import com.example.ui.components.HomeEmptyMenuPopup
 import com.example.ui.components.MoveToPageDialog
 import com.example.ui.components.WidgetContextMenuPopup
-import com.example.ui.components.WidgetResizeDialog
 import com.example.ui.screens.AppDrawerScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
@@ -390,14 +389,22 @@ private fun LauncherRoot(
             homeGestures = uiState.settings.homeGestures,
             homeGridColumns = uiState.settings.homeGridColumns,
             homeLoopPaging = uiState.settings.homeLoopPaging,
+            maxHomePages = LauncherPreferencesRepository.MAX_HOME_PAGES,
             currentHomePage = uiState.currentHomePage,
             homePageCommand = uiState.homePageCommand,
+            resizingWidgetId = uiState.resizingWidgetId,
             widgetHostController = widgetHostController,
             onHomePageChanged = viewModel::onHomePageChanged,
             onAppClick = viewModel::launchApp,
             onAppLongClick = viewModel::openAppMenu,
             onAppSwipe = viewModel::onAppSwiped,
             onWidgetLongClick = viewModel::openWidgetMenu,
+            onResizeWidget = viewModel::resizeWidget,
+            onDismissResizeWidget = viewModel::dismissResizeWidget,
+            onMoveHomeAppToCell = viewModel::moveHomeAppToCell,
+            onMoveWidgetToCell = viewModel::moveWidgetToCell,
+            onMoveHomeAppToNewPage = viewModel::moveHomeAppToNewPage,
+            onMoveWidgetToNewPage = viewModel::moveWidgetToNewPage,
             onHomeSwipe = viewModel::onHomeSwiped,
             onEmptyLongPress = viewModel::openHomeEmptyMenu,
         )
@@ -502,14 +509,23 @@ private fun LauncherRoot(
             }
         }
 
-        // Empty-space long-press floating popup (Widgets / Wallpaper / Home settings)
+        // Empty-space long-press floating popup (Widgets / Wallpaper / Home settings / Pages)
         val emptyMenuAnchor = uiState.homeEmptyMenuAnchor
         if (emptyMenuAnchor != null) {
             HomeEmptyMenuPopup(
                 anchorOffset = emptyMenuAnchor,
+                canAddPage = uiState.settings.homePageCount < LauncherPreferencesRepository.MAX_HOME_PAGES,
+                canDeleteCurrentPage = uiState.settings.homePageCount > 1,
                 onAddWidget = { viewModel.openWidgetPicker() },
                 onOpenWallpaper = viewModel::openWallpaperPicker,
                 onOpenSettings = viewModel::openSettings,
+                onAddPageAtStart = viewModel::insertHomePageAtStart,
+                onAddPageAtEnd = viewModel::appendHomePageAtEnd,
+                onDeleteCurrentPage = {
+                    viewModel.deleteCurrentHomePage { removedIds ->
+                        removedIds.forEach { widgetId -> widgetHostController.deleteWidget(widgetId) }
+                    }
+                },
                 onDismiss = viewModel::dismissHomeEmptyMenu,
             )
         }
@@ -520,27 +536,21 @@ private fun LauncherRoot(
             val canReconfigure = remember(widgetMenu.widget.appWidgetId) {
                 widgetHostController.isReconfigurable(widgetMenu.widget.appWidgetId)
             }
+            val canResize = remember(widgetMenu.widget.appWidgetId, uiState.settings.homeGridColumns) {
+                widgetHostController.getResizeSpec(
+                    widgetMenu.widget.appWidgetId,
+                    uiState.settings.homeGridColumns,
+                ).isResizable
+            }
             WidgetContextMenuPopup(
                 target = widgetMenu,
                 canReconfigure = canReconfigure,
+                canResize = canResize,
                 onDismiss = viewModel::dismissWidgetMenu,
                 onReconfigure = { onReconfigureWidget(widgetMenu.widget) },
                 onResize = { viewModel.openResizeWidget(widgetMenu.widget) },
                 onMovePage = { viewModel.openMoveWidgetDialog(widgetMenu.widget) },
                 onRemove = { onDeleteWidget(widgetMenu.widget) },
-            )
-        }
-
-        // Widget resize dialog
-        val resizeWidget = uiState.resizeWidgetTarget
-        if (resizeWidget != null) {
-            WidgetResizeDialog(
-                widget = resizeWidget,
-                maxColumns = uiState.settings.homeGridColumns,
-                onConfirm = { spanX, spanY ->
-                    viewModel.resizeWidget(resizeWidget.appWidgetId, spanX, spanY)
-                },
-                onDismiss = viewModel::dismissResizeWidget,
             )
         }
 

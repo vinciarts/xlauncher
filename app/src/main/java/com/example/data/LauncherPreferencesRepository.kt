@@ -11,7 +11,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.DrawerTab
 import com.example.model.HomeGestureAction
+import com.example.model.HomeGridEngine
 import com.example.model.LauncherSettings
+import com.example.model.PlacedHomeApp
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +31,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val HOME_LOOP_PAGING = booleanPreferencesKey("home_loop_paging")
         val HOME_GRID_COLUMNS = intPreferencesKey("home_grid_columns")
         val HOME_PAGES_DATA = stringPreferencesKey("home_pages_data")
+        val HOME_APPS_GRID = stringPreferencesKey("home_apps_grid")
         val PLACED_WIDGETS = stringPreferencesKey("placed_widgets")
         val DOCK_KEYS = stringPreferencesKey("dock_keys")
         val DOCK_GESTURES = stringPreferencesKey("dock_gestures")
@@ -43,11 +46,14 @@ class LauncherPreferencesRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<LauncherSettings> = context.launcherDataStore.data.map { prefs ->
+        val legacyHomePages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA])
+        val gridApps = readHomeApps(prefs, legacyHomePages)
         LauncherSettings(
             homePageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES),
             homeLoopPaging = prefs[Keys.HOME_LOOP_PAGING] ?: true,
             homeGridColumns = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5),
-            homePages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]),
+            homePages = legacyHomePages,
+            placedHomeApps = gridApps,
             placedWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
             dockKeys = decodeList(prefs[Keys.DOCK_KEYS]).take(MAX_DOCK_ITEMS),
             appGestures = decodeAppGestures(prefs[Keys.DOCK_GESTURES]),
@@ -66,14 +72,62 @@ class LauncherPreferencesRepository(private val context: Context) {
         )
     }
 
+    private fun readHomeApps(
+        prefs: Preferences,
+        legacyPages: Map<Int, List<String>> = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]),
+    ): List<PlacedHomeApp> {
+        val rawGrid = prefs[Keys.HOME_APPS_GRID]
+        if (rawGrid != null) {
+            return decodePlacedHomeApps(rawGrid)
+        }
+        val migrated = mutableListOf<PlacedHomeApp>()
+        legacyPages.entries.sortedBy { it.key }.forEach { (page, keys) ->
+            keys.distinct().forEach { key ->
+                migrated.add(PlacedHomeApp(componentKey = key, pageIndex = page, cellX = -1, cellY = -1))
+            }
+        }
+        return migrated
+    }
+
+    private fun normalizeAllPages(
+        widgets: List<PlacedWidget>,
+        apps: List<PlacedHomeApp>,
+        pageCount: Int,
+        cols: Int,
+    ): Pair<List<PlacedWidget>, List<PlacedHomeApp>> {
+        val outWidgets = mutableListOf<PlacedWidget>()
+        val outApps = mutableListOf<PlacedHomeApp>()
+        val maxPage = (pageCount - 1).coerceAtLeast(0)
+        for (p in 0..maxPage) {
+            val pageW = widgets.filter { it.pageIndex == p }
+            val pageA = apps.filter { it.pageIndex == p }
+            val (nw, na) = HomeGridEngine.normalizePage(pageW, pageA, cols)
+            outWidgets.addAll(nw)
+            outApps.addAll(na)
+        }
+        return outWidgets to outApps
+    }
+
     suspend fun seedDefaultsIfNeeded(
         dockKeys: List<String>,
         homePages: Map<Int, List<String>>,
     ) {
         context.launcherDataStore.edit { prefs ->
             if (prefs[Keys.HAS_SEEDED_DEFAULTS] == true) return@edit
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val seededApps = mutableListOf<PlacedHomeApp>()
+            homePages.entries.sortedBy { it.key }.forEach { (page, keys) ->
+                keys.distinct().forEachIndexed { idx, key ->
+                    val cx = idx % cols
+                    val cy = idx / cols
+                    if (cy < HomeGridEngine.HOME_GRID_ROWS) {
+                        seededApps.add(PlacedHomeApp(componentKey = key, pageIndex = page, cellX = cx, cellY = cy))
+                    }
+                }
+            }
             prefs[Keys.DOCK_KEYS] = encodeList(dockKeys.take(MAX_DOCK_ITEMS))
             prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(homePages)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(seededApps)
             prefs[Keys.HOME_PAGE_COUNT] = homePages.size.coerceIn(2, MAX_HOME_PAGES)
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true
         }
@@ -82,27 +136,168 @@ class LauncherPreferencesRepository(private val context: Context) {
     suspend fun setHomePageCount(count: Int) {
         val clamped = count.coerceIn(1, MAX_HOME_PAGES)
         context.launcherDataStore.edit { prefs ->
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
             prefs[Keys.HOME_PAGE_COUNT] = clamped
-            val currentPages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]).toMutableMap()
-            val overflowKeys = mutableListOf<String>()
-            val removedKeys = currentPages.keys.filter { it >= clamped }
-            removedKeys.sorted().forEach { idx ->
-                overflowKeys.addAll(currentPages.remove(idx).orEmpty())
+            val lastIdx = clamped - 1
+
+            val currentApps = readHomeApps(prefs).map { app ->
+                if (app.pageIndex >= clamped) app.copy(pageIndex = lastIdx, cellX = -1, cellY = -1)
+                else app
             }
-            if (overflowKeys.isNotEmpty()) {
-                val lastIdx = clamped - 1
-                val existing = currentPages[lastIdx].orEmpty()
-                currentPages[lastIdx] = (existing + overflowKeys).distinct()
+            val currentWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).map { w ->
+                if (w.pageIndex >= clamped) w.copy(pageIndex = lastIdx, cellX = -1, cellY = -1)
+                else w
             }
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(currentPages)
-            val widgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS])
-            if (widgets.any { it.pageIndex >= clamped }) {
-                val updated = widgets.map { w ->
-                    if (w.pageIndex >= clamped) w.copy(pageIndex = clamped - 1) else w
-                }
-                prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updated)
-            }
+            val (normW, normA) = normalizeAllPages(currentWidgets, currentApps, clamped, cols)
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
         }
+    }
+
+    suspend fun insertHomePageAtStart(): Boolean {
+        var added = false
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount >= MAX_HOME_PAGES) return@edit
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount + 1
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW.map { it.copy(pageIndex = it.pageIndex + 1) })
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA.map { it.copy(pageIndex = it.pageIndex + 1) })
+            added = true
+        }
+        return added
+    }
+
+    suspend fun appendHomePageAtEnd(): Boolean {
+        var added = false
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount >= MAX_HOME_PAGES) return@edit
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount + 1
+            added = true
+        }
+        return added
+    }
+
+    suspend fun deleteHomePage(pageIndex: Int): List<Int> {
+        var removedWidgetIds: List<Int> = emptyList()
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount <= 1 || pageIndex !in 0 until currentCount) return@edit
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            removedWidgetIds = normW.filter { it.pageIndex == pageIndex }.map { it.appWidgetId }
+            val updatedW = normW.mapNotNull { w ->
+                when {
+                    w.pageIndex == pageIndex -> null
+                    w.pageIndex > pageIndex -> w.copy(pageIndex = w.pageIndex - 1)
+                    else -> w
+                }
+            }
+            val updatedA = normA.mapNotNull { a ->
+                when {
+                    a.pageIndex == pageIndex -> null
+                    a.pageIndex > pageIndex -> a.copy(pageIndex = a.pageIndex - 1)
+                    else -> a
+                }
+            }
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount - 1
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updatedW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedA)
+        }
+        return removedWidgetIds
+    }
+
+    suspend fun insertHomePageAndMoveApp(
+        componentKey: String,
+        fromPage: Int,
+        atStart: Boolean,
+        targetCellX: Int,
+        targetCellY: Int,
+    ): Boolean {
+        var moved = false
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount >= MAX_HOME_PAGES) return@edit
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            if (normA.none { it.pageIndex == fromPage && it.componentKey == componentKey }) return@edit
+            val cx = targetCellX.coerceIn(0, cols - 1)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - 1)
+            val updatedW = if (atStart) normW.map { it.copy(pageIndex = it.pageIndex + 1) } else normW
+            val newPageIdx = if (atStart) 0 else currentCount
+            val updatedA = normA.map { a ->
+                when {
+                    a.pageIndex == fromPage && a.componentKey == componentKey -> {
+                        a.copy(pageIndex = newPageIdx, cellX = cx, cellY = cy)
+                    }
+                    atStart -> a.copy(pageIndex = a.pageIndex + 1)
+                    else -> a
+                }
+            }
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount + 1
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updatedW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedA)
+            moved = true
+        }
+        return moved
+    }
+
+    suspend fun insertHomePageAndMoveWidget(
+        appWidgetId: Int,
+        atStart: Boolean,
+        targetCellX: Int,
+        targetCellY: Int,
+    ): Boolean {
+        var moved = false
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount >= MAX_HOME_PAGES) return@edit
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val target = normW.firstOrNull { it.appWidgetId == appWidgetId } ?: return@edit
+            val sx = target.spanX.coerceIn(1, cols)
+            val sy = target.spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
+            val cx = targetCellX.coerceIn(0, cols - sx)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - sy)
+            val newPageIdx = if (atStart) 0 else currentCount
+            val updatedW = normW.map { w ->
+                when {
+                    w.appWidgetId == appWidgetId -> {
+                        w.copy(pageIndex = newPageIdx, cellX = cx, cellY = cy, spanX = sx, spanY = sy)
+                    }
+                    atStart -> w.copy(pageIndex = w.pageIndex + 1)
+                    else -> w
+                }
+            }
+            val updatedA = if (atStart) normA.map { it.copy(pageIndex = it.pageIndex + 1) } else normA
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount + 1
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updatedW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedA)
+            moved = true
+        }
+        return moved
     }
 
     suspend fun setHomeLoopPaging(enabled: Boolean) {
@@ -113,51 +308,186 @@ class LauncherPreferencesRepository(private val context: Context) {
 
     suspend fun setHomeGridColumns(columns: Int) {
         context.launcherDataStore.edit { prefs ->
-            prefs[Keys.HOME_GRID_COLUMNS] = columns.coerceIn(4, 5)
+            val cols = columns.coerceIn(4, 5)
+            prefs[Keys.HOME_GRID_COLUMNS] = cols
+            val pageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                pageCount,
+                cols,
+            )
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
         }
     }
 
-    suspend fun pinAppToHomePage(componentKey: String, pageIndex: Int) {
+    suspend fun pinAppToHomePage(componentKey: String, pageIndex: Int): Boolean {
+        var placed = true
         context.launcherDataStore.edit { prefs ->
-            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
             val targetPage = pageIndex.coerceIn(0, MAX_HOME_PAGES - 1)
             if (targetPage >= currentCount) {
-                prefs[Keys.HOME_PAGE_COUNT] = targetPage + 1
+                currentCount = targetPage + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
             }
-            val pages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]).toMutableMap()
-            val list = pages[targetPage].orEmpty().toMutableList()
-            if (!list.contains(componentKey)) {
-                list.add(componentKey)
-                pages[targetPage] = list
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            if (normA.any { it.pageIndex == targetPage && it.componentKey == componentKey }) {
+                prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
+                return@edit
             }
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(pages)
+            val occ = HomeGridEngine.buildOccupancy(
+                widgets = normW.filter { it.pageIndex == targetPage },
+                apps = normA.filter { it.pageIndex == targetPage },
+                cols = cols,
+            )
+            val freeCell = HomeGridEngine.findFirstAvailableCell(occ, 1, 1, cols)
+            if (freeCell != null) {
+                val updated = normA + PlacedHomeApp(
+                    componentKey = componentKey,
+                    pageIndex = targetPage,
+                    cellX = freeCell.first,
+                    cellY = freeCell.second,
+                )
+                prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updated)
+                prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+            } else {
+                placed = false
+            }
         }
+        return placed
     }
 
     suspend fun removeAppFromHomePage(componentKey: String, pageIndex: Int) {
         context.launcherDataStore.edit { prefs ->
-            val pages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]).toMutableMap()
-            val list = pages[pageIndex].orEmpty().filterNot { it == componentKey }
-            pages[pageIndex] = list
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(pages)
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val pageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val (_, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                pageCount,
+                cols,
+            )
+            val updated = normA.filterNot { it.pageIndex == pageIndex && it.componentKey == componentKey }
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updated)
         }
     }
 
-    suspend fun moveAppBetweenHomePages(componentKey: String, fromPage: Int, toPage: Int) {
+    suspend fun moveAppBetweenHomePages(componentKey: String, fromPage: Int, toPage: Int): Boolean {
+        var moved = true
         context.launcherDataStore.edit { prefs ->
-            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
             val target = toPage.coerceIn(0, MAX_HOME_PAGES - 1)
             if (target >= currentCount) {
-                prefs[Keys.HOME_PAGE_COUNT] = target + 1
+                currentCount = target + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
             }
-            val pages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]).toMutableMap()
-            pages[fromPage] = pages[fromPage].orEmpty().filterNot { it == componentKey }
-            val dest = pages[target].orEmpty().toMutableList()
-            if (!dest.contains(componentKey)) {
-                dest.add(componentKey)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val withoutSrc = normA.filterNot { it.pageIndex == fromPage && it.componentKey == componentKey }
+            if (withoutSrc.any { it.pageIndex == target && it.componentKey == componentKey }) {
+                prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(withoutSrc)
+                return@edit
             }
-            pages[target] = dest
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(pages)
+            val occ = HomeGridEngine.buildOccupancy(
+                widgets = normW.filter { it.pageIndex == target },
+                apps = withoutSrc.filter { it.pageIndex == target },
+                cols = cols,
+            )
+            val freeCell = HomeGridEngine.findFirstAvailableCell(occ, 1, 1, cols)
+            if (freeCell != null) {
+                val updated = withoutSrc + PlacedHomeApp(
+                    componentKey = componentKey,
+                    pageIndex = target,
+                    cellX = freeCell.first,
+                    cellY = freeCell.second,
+                )
+                prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updated)
+                prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+            } else {
+                moved = false
+            }
+        }
+        return moved
+    }
+
+    /**
+     * Moves a Home app icon to an exact (targetPage, targetCellX, targetCellY).
+     * If another 1x1 app occupies that exact cell, swaps their positions cleanly.
+     */
+    suspend fun moveAppToCell(
+        componentKey: String,
+        fromPage: Int,
+        targetPage: Int,
+        targetCellX: Int,
+        targetCellY: Int,
+    ) {
+        context.launcherDataStore.edit { prefs ->
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val clampedPage = targetPage.coerceIn(0, MAX_HOME_PAGES - 1)
+            if (clampedPage >= currentCount) {
+                currentCount = clampedPage + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
+            }
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val sourceApp = normA.firstOrNull { it.pageIndex == fromPage && it.componentKey == componentKey }
+                ?: return@edit
+            val cx = targetCellX.coerceIn(0, cols - 1)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - 1)
+            if (sourceApp.pageIndex == clampedPage && sourceApp.cellX == cx && sourceApp.cellY == cy) return@edit
+
+            val targetPageWidgets = normW.filter { it.pageIndex == clampedPage }
+            val widgetOcc = HomeGridEngine.buildOccupancy(targetPageWidgets, emptyList(), cols)
+            if (widgetOcc[cy][cx]) {
+                // Blocked by a widget; do not overlap
+                return@edit
+            }
+
+            // Check if another app is already at (clampedPage, cx, cy)
+            val occupant = normA.firstOrNull {
+                it.pageIndex == clampedPage && it.cellX == cx && it.cellY == cy &&
+                    !(it.pageIndex == fromPage && it.componentKey == componentKey)
+            }
+
+            val updated = normA.mapNotNull { item ->
+                when {
+                    item.pageIndex == fromPage && item.componentKey == componentKey -> {
+                        item.copy(pageIndex = clampedPage, cellX = cx, cellY = cy)
+                    }
+                    occupant != null && item.pageIndex == occupant.pageIndex && item.componentKey == occupant.componentKey -> {
+                        // Swap occupant into sourceApp's previous spot if moving within same page or source spot free
+                        if (fromPage == clampedPage) {
+                            item.copy(cellX = sourceApp.cellX, cellY = sourceApp.cellY)
+                        } else {
+                            // Cross-page swap: move occupant to sourceApp's old page & cell
+                            val dupOnFrom = normA.any { it.pageIndex == fromPage && it.componentKey == occupant.componentKey }
+                            if (dupOnFrom) null else item.copy(pageIndex = fromPage, cellX = sourceApp.cellX, cellY = sourceApp.cellY)
+                        }
+                    }
+                    // If dragging across pages and same app already existed on target page, remove duplicate
+                    fromPage != clampedPage && item.pageIndex == clampedPage && item.componentKey == componentKey -> null
+                    else -> item
+                }
+            }
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updated)
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
         }
     }
 
@@ -328,16 +658,54 @@ class LauncherPreferencesRepository(private val context: Context) {
 
     suspend fun addPlacedWidget(widget: PlacedWidget) {
         context.launcherDataStore.edit { prefs ->
-            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
-            val targetPage = widget.pageIndex.coerceIn(0, MAX_HOME_PAGES - 1)
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            var targetPage = widget.pageIndex.coerceIn(0, MAX_HOME_PAGES - 1)
             if (targetPage >= currentCount) {
-                prefs[Keys.HOME_PAGE_COUNT] = targetPage + 1
+                currentCount = targetPage + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
             }
-            val list = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS])
-                .filterNot { it.appWidgetId == widget.appWidgetId }
-                .toMutableList()
-            list.add(widget.copy(pageIndex = targetPage))
-            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(list)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).filterNot { it.appWidgetId == widget.appWidgetId },
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val sx = widget.spanX.coerceIn(1, cols)
+            val sy = widget.spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
+
+            // Try target page first, then subsequent pages, expanding up to MAX_HOME_PAGES if needed
+            var placed: PlacedWidget? = null
+            val candidatePages = (listOf(targetPage) + (0 until currentCount).filter { it != targetPage })
+            for (p in candidatePages) {
+                val occ = HomeGridEngine.buildOccupancy(
+                    widgets = normW.filter { it.pageIndex == p },
+                    apps = normA.filter { it.pageIndex == p },
+                    cols = cols,
+                )
+                val slot = HomeGridEngine.findFirstAvailableCell(occ, sx, sy, cols)
+                if (slot != null) {
+                    placed = widget.copy(
+                        pageIndex = p,
+                        spanX = sx,
+                        spanY = sy,
+                        cellX = slot.first,
+                        cellY = slot.second,
+                    )
+                    break
+                }
+            }
+            if (placed == null && currentCount < MAX_HOME_PAGES) {
+                val newPage = currentCount
+                currentCount += 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
+                placed = widget.copy(pageIndex = newPage, spanX = sx, spanY = sy, cellX = 0, cellY = 0)
+            }
+            if (placed == null) {
+                placed = widget.copy(pageIndex = targetPage, spanX = sx, spanY = sy, cellX = 0, cellY = 0)
+            }
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW + placed)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
         }
     }
 
@@ -349,31 +717,136 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun updateWidgetSpan(appWidgetId: Int, spanX: Int, spanY: Int) {
+    suspend fun updateWidgetRect(
+        appWidgetId: Int,
+        cellX: Int,
+        cellY: Int,
+        spanX: Int,
+        spanY: Int,
+    ) {
         context.launcherDataStore.edit { prefs ->
-            val updated = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).map { w ->
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val pageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                pageCount,
+                cols,
+            )
+            val target = normW.firstOrNull { it.appWidgetId == appWidgetId } ?: return@edit
+            val sx = spanX.coerceIn(1, cols)
+            val sy = spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
+            val cx = cellX.coerceIn(0, cols - sx)
+            val cy = cellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - sy)
+            val occ = HomeGridEngine.buildOccupancy(
+                widgets = normW.filter { it.pageIndex == target.pageIndex },
+                apps = normA.filter { it.pageIndex == target.pageIndex },
+                cols = cols,
+                ignoreWidgetId = appWidgetId,
+            )
+            if (!HomeGridEngine.canPlace(occ, cx, cy, sx, sy, cols)) return@edit
+
+            val updated = normW.map { w ->
                 if (w.appWidgetId == appWidgetId) {
-                    w.copy(spanX = spanX.coerceIn(1, 5), spanY = spanY.coerceIn(1, 6))
+                    w.copy(cellX = cx, cellY = cy, spanX = sx, spanY = sy)
                 } else {
                     w
                 }
             }
             prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updated)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
         }
     }
 
-    suspend fun moveWidgetToPage(appWidgetId: Int, targetPage: Int) {
+    suspend fun moveWidgetToCell(
+        appWidgetId: Int,
+        targetPage: Int,
+        targetCellX: Int,
+        targetCellY: Int,
+    ) {
         context.launcherDataStore.edit { prefs ->
-            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
-            val clamped = targetPage.coerceIn(0, MAX_HOME_PAGES - 1)
-            if (clamped >= currentCount) {
-                prefs[Keys.HOME_PAGE_COUNT] = clamped + 1
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val clampedPage = targetPage.coerceIn(0, MAX_HOME_PAGES - 1)
+            if (clampedPage >= currentCount) {
+                currentCount = clampedPage + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
             }
-            val updated = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).map { w ->
-                if (w.appWidgetId == appWidgetId) w.copy(pageIndex = clamped) else w
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val widget = normW.firstOrNull { it.appWidgetId == appWidgetId } ?: return@edit
+            val sx = widget.spanX.coerceIn(1, cols)
+            val sy = widget.spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
+            val cx = targetCellX.coerceIn(0, cols - sx)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - sy)
+            val occ = HomeGridEngine.buildOccupancy(
+                widgets = normW.filter { it.pageIndex == clampedPage },
+                apps = normA.filter { it.pageIndex == clampedPage },
+                cols = cols,
+                ignoreWidgetId = appWidgetId,
+            )
+            val finalSlot = if (HomeGridEngine.canPlace(occ, cx, cy, sx, sy, cols)) {
+                cx to cy
+            } else {
+                return@edit
+            }
+            val updated = normW.map { w ->
+                if (w.appWidgetId == appWidgetId) {
+                    w.copy(pageIndex = clampedPage, cellX = finalSlot.first, cellY = finalSlot.second, spanX = sx, spanY = sy)
+                } else {
+                    w
+                }
             }
             prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updated)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
         }
+    }
+
+    suspend fun moveWidgetToPage(appWidgetId: Int, targetPage: Int): Boolean {
+        var moved = true
+        context.launcherDataStore.edit { prefs ->
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val clamped = targetPage.coerceIn(0, MAX_HOME_PAGES - 1)
+            if (clamped >= currentCount) {
+                currentCount = clamped + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
+            }
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val widget = normW.firstOrNull { it.appWidgetId == appWidgetId } ?: return@edit
+            val sx = widget.spanX.coerceIn(1, cols)
+            val sy = widget.spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
+            val occ = HomeGridEngine.buildOccupancy(
+                widgets = normW.filter { it.pageIndex == clamped },
+                apps = normA.filter { it.pageIndex == clamped },
+                cols = cols,
+                ignoreWidgetId = appWidgetId,
+            )
+            val slot = HomeGridEngine.findFirstAvailableCell(occ, sx, sy, cols)
+            if (slot != null) {
+                val updated = normW.map { w ->
+                    if (w.appWidgetId == appWidgetId) {
+                        w.copy(pageIndex = clamped, cellX = slot.first, cellY = slot.second, spanX = sx, spanY = sy)
+                    } else {
+                        w
+                    }
+                }
+                prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updated)
+                prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(normA)
+            } else {
+                moved = false
+            }
+        }
+        return moved
     }
 
     suspend fun pruneMissingWidgets(validIds: Set<Int>) {
@@ -477,10 +950,39 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
-    // Format: "widgetId|pageIndex|spanX|spanY|providerFlatName;..."
+    // Format: "page|cellX|cellY|encodedComponentKey;..."
+    private fun encodePlacedHomeApps(apps: List<PlacedHomeApp>): String =
+        apps.joinToString(PAGE_SEP) { a ->
+            listOf(a.pageIndex, a.cellX, a.cellY, Uri.encode(a.componentKey)).joinToString(WIDGET_FIELD_SEP)
+        }
+
+    private fun decodePlacedHomeApps(raw: String?): List<PlacedHomeApp> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split(PAGE_SEP).mapNotNull { segment ->
+            val parts = segment.split(WIDGET_FIELD_SEP)
+            if (parts.size < 4) return@mapNotNull null
+            val page = parts[0].toIntOrNull()?.coerceAtLeast(0) ?: return@mapNotNull null
+            val cx = parts[1].toIntOrNull() ?: -1
+            val cy = parts[2].toIntOrNull() ?: -1
+            val key = Uri.decode(parts[3])
+            if (key.isBlank()) return@mapNotNull null
+            PlacedHomeApp(componentKey = key, pageIndex = page, cellX = cx, cellY = cy)
+        }
+    }
+
+    // Format: "widgetId|pageIndex|spanX|spanY|providerFlatName|cellX|cellY;..."
+    // Backward-compatible with legacy 5-field entries (decoded with cellX = -1, cellY = -1).
     private fun encodePlacedWidgets(widgets: List<PlacedWidget>): String =
         widgets.joinToString(PAGE_SEP) { w ->
-            listOf(w.appWidgetId, w.pageIndex, w.spanX, w.spanY, w.providerComponent).joinToString(WIDGET_FIELD_SEP)
+            listOf(
+                w.appWidgetId,
+                w.pageIndex,
+                w.spanX,
+                w.spanY,
+                w.providerComponent,
+                w.cellX,
+                w.cellY,
+            ).joinToString(WIDGET_FIELD_SEP)
         }
 
     private fun decodePlacedWidgets(raw: String?): List<PlacedWidget> {
@@ -492,14 +994,18 @@ class LauncherPreferencesRepository(private val context: Context) {
             val page = parts[1].toIntOrNull() ?: return@mapNotNull null
             val spanX = parts[2].toIntOrNull()?.coerceIn(1, 5) ?: return@mapNotNull null
             val spanY = parts[3].toIntOrNull()?.coerceIn(1, 6) ?: return@mapNotNull null
-            val provider = parts.drop(4).joinToString(WIDGET_FIELD_SEP)
+            val provider = parts[4]
             if (provider.isBlank()) return@mapNotNull null
+            val cellX = parts.getOrNull(5)?.toIntOrNull() ?: -1
+            val cellY = parts.getOrNull(6)?.toIntOrNull() ?: -1
             PlacedWidget(
                 appWidgetId = id,
                 pageIndex = page.coerceAtLeast(0),
                 spanX = spanX,
                 spanY = spanY,
                 providerComponent = provider,
+                cellX = cellX,
+                cellY = cellY,
             )
         }
     }
