@@ -17,6 +17,8 @@
     <string name="action_pin_dock">加入底部 Dock</string>
     <string name="action_unpin_dock">移出底部 Dock</string>
     <string name="action_manage_drawer_tabs">所属标签页</string>
+    <string name="action_app_widgets">小组件</string>
+    <string name="action_more_options">更多</string>
     <string name="action_app_info">应用信息</string>
     <string name="action_uninstall">卸载应用</string>
     <string name="action_enable_app_shortcuts">设为默认桌面以显示快捷方式</string>
@@ -108,6 +110,10 @@
     <string name="drawer_app_tabs_title">标签页 · %1$s</string>
     <string name="drawer_tabs_empty_assign_hint">在下方新建一个标签页，即可将该应用归类进去。</string>
     <string name="drawer_tabs_limit_message">最多可创建 12 个自定义标签页</string>
+    <string name="drawer_tab_visible_toggle">在抽屉中显示</string>
+    <string name="drawer_tab_hidden_badge">已隐藏</string>
+    <string name="drawer_tab_visibility_hint">关闭开关即可在抽屉中隐藏对应标签页，至少保留 1 个可见标签页。</string>
+    <string name="drawer_tab_keep_one_visible">至少保留 1 个可见标签页</string>
 
     <string name="dialog_done">完成</string>
     <string name="dialog_cancel">取消</string>
@@ -131,6 +137,7 @@
     <string name="home_menu_wallpaper">更换壁纸</string>
     <string name="home_menu_settings">桌面设置</string>
     <string name="widget_picker_title">添加小组件</string>
+    <string name="widget_picker_show_all">全部小组件</string>
     <string name="search_widgets_placeholder">搜索小组件或应用…</string>
     <string name="widget_picker_empty">暂无可用的系统小组件</string>
     <string name="widget_count_suffix">%1$d 个</string>

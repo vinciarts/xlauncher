@@ -70,6 +70,8 @@ fun SettingsScreen(
     onRenameDrawerTab: (String, String) -> Unit,
     onSetDrawerTabApps: (String, Set<String>) -> Unit,
     onMoveDrawerTab: (String, Int) -> Unit,
+    onSetAllTabHidden: (Boolean) -> Unit,
+    onSetDrawerTabHidden: (String, Boolean) -> Unit,
     onDeleteDrawerTab: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -297,49 +299,115 @@ fun SettingsScreen(
                             }
                         }
 
+                        val visibleTabCount = (if (!settings.isAllTabHidden) 1 else 0) +
+                            settings.drawerTabs.count { !it.isHidden }
+
+                        Text(
+                            text = stringResource(R.string.drawer_tab_visibility_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Built-in "All" tab visibility row
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("settings_drawer_tab_all"),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stringResource(R.string.drawer_tab_all),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (settings.isAllTabHidden) MaterialTheme.colorScheme.onSurfaceVariant
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        val countText = stringResource(R.string.drawer_tab_app_count, uiState.allApps.size)
+                                        Text(
+                                            text = if (settings.isAllTabHidden) {
+                                                "$countText · ${stringResource(R.string.drawer_tab_hidden_badge)}"
+                                            } else {
+                                                countText
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Switch(
+                                        checked = !settings.isAllTabHidden,
+                                        enabled = settings.isAllTabHidden || visibleTabCount > 1,
+                                        onCheckedChange = { visible -> onSetAllTabHidden(!visible) },
+                                        modifier = Modifier.testTag("switch_drawer_tab_all"),
+                                    )
+                                }
+                            }
+
+                            settings.drawerTabs.forEach { tab ->
+                                val validCount = tab.appKeys.count { it in uiState.appsByKey }
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { editingTabId = tab.id }
+                                        .testTag("settings_drawer_tab_${tab.id}"),
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = tab.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = if (tab.isHidden) MaterialTheme.colorScheme.onSurfaceVariant
+                                                else MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            val countText = stringResource(R.string.drawer_tab_app_count, validCount)
+                                            Text(
+                                                text = if (tab.isHidden) {
+                                                    "$countText · ${stringResource(R.string.drawer_tab_hidden_badge)}"
+                                                } else {
+                                                    countText
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Switch(
+                                            checked = !tab.isHidden,
+                                            enabled = tab.isHidden || visibleTabCount > 1,
+                                            onCheckedChange = { visible -> onSetDrawerTabHidden(tab.id, !visible) },
+                                            modifier = Modifier.testTag("switch_drawer_tab_${tab.id}"),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         if (settings.drawerTabs.isEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = stringResource(R.string.settings_drawer_tabs_empty),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                settings.drawerTabs.forEach { tab ->
-                                    val validCount = uiState.drawerTabPages
-                                        .firstOrNull { it.id == tab.id }
-                                        ?.apps?.size ?: tab.appKeys.size
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainer,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable { editingTabId = tab.id }
-                                            .testTag("settings_drawer_tab_${tab.id}"),
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                        ) {
-                                            Text(
-                                                text = tab.name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Text(
-                                                text = stringResource(R.string.drawer_tab_app_count, validCount),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -375,16 +443,22 @@ fun SettingsScreen(
     val editingTab = editingTabId?.let { id -> settings.drawerTabs.firstOrNull { it.id == id } }
     if (editingTab != null) {
         val idx = settings.drawerTabs.indexOfFirst { it.id == editingTab.id }
+        val visibleTabCount = (if (!settings.isAllTabHidden) 1 else 0) +
+            settings.drawerTabs.count { !it.isHidden }
         EditDrawerTabDialog(
             tab = editingTab,
             canMoveLeft = idx > 0,
             canMoveRight = idx in 0 until settings.drawerTabs.lastIndex,
+            canHide = visibleTabCount > 1,
             allApps = uiState.allApps,
-            onSave = { newName, appKeys ->
+            onSave = { newName, appKeys, isHidden ->
                 if (newName != editingTab.name) {
                     onRenameDrawerTab(editingTab.id, newName)
                 }
                 onSetDrawerTabApps(editingTab.id, appKeys)
+                if (isHidden != editingTab.isHidden) {
+                    onSetDrawerTabHidden(editingTab.id, isHidden)
+                }
                 editingTabId = null
             },
             onMoveLeft = { onMoveDrawerTab(editingTab.id, -1) },

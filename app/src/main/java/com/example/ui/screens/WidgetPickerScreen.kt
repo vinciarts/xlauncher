@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -69,19 +70,26 @@ fun WidgetPickerScreen(
     widgetHostController: WidgetHostController,
     onSelectWidget: (WidgetCatalogItem) -> Unit,
     onBack: () -> Unit,
+    filterPackageName: String? = null,
+    onClearPackageFilter: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onBack)
 
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by remember(filterPackageName) { mutableStateOf("") }
     val expandedPackages = remember { mutableStateMapOf<String, Boolean>() }
 
-    val grouped = remember(catalog, searchQuery) {
+    val baseCatalog = remember(catalog, filterPackageName) {
+        if (filterPackageName.isNullOrBlank()) catalog
+        else catalog.filter { it.packageName == filterPackageName }
+    }
+
+    val grouped = remember(baseCatalog, searchQuery) {
         val q = searchQuery.trim()
         val filtered = if (q.isEmpty()) {
-            catalog
+            baseCatalog
         } else {
-            catalog.filter {
+            baseCatalog.filter {
                 it.appLabel.contains(q, ignoreCase = true) ||
                     it.widgetLabel.contains(q, ignoreCase = true) ||
                     it.packageName.contains(q, ignoreCase = true)
@@ -90,11 +98,21 @@ fun WidgetPickerScreen(
         filtered.groupBy { it.packageName }.entries.toList()
     }
 
+    val filteredAppLabel = if (!filterPackageName.isNullOrBlank()) {
+        baseCatalog.firstOrNull()?.appLabel
+    } else {
+        null
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(text = stringResource(R.string.widget_picker_title))
+                    Text(
+                        text = filteredAppLabel ?: stringResource(R.string.widget_picker_title),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 navigationIcon = {
                     IconButton(
@@ -105,6 +123,16 @@ fun WidgetPickerScreen(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.cd_back),
                         )
+                    }
+                },
+                actions = {
+                    if (!filterPackageName.isNullOrBlank()) {
+                        TextButton(
+                            onClick = onClearPackageFilter,
+                            modifier = Modifier.testTag("widget_picker_show_all_button"),
+                        ) {
+                            Text(text = stringResource(R.string.widget_picker_show_all))
+                        }
                     }
                 },
             )
@@ -123,35 +151,37 @@ fun WidgetPickerScreen(
                     .widthIn(max = 600.dp)
                     .navigationBarsPadding(),
             ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    shape = RoundedCornerShape(28.dp),
-                    placeholder = {
-                        Text(text = stringResource(R.string.search_widgets_placeholder))
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.cd_clear_search),
-                                )
+                if (filterPackageName.isNullOrBlank()) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        shape = RoundedCornerShape(28.dp),
+                        placeholder = {
+                            Text(text = stringResource(R.string.search_widgets_placeholder))
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = null,
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.cd_clear_search),
+                                    )
+                                }
                             }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .testTag("widget_search_input"),
-                )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .testTag("widget_search_input"),
+                    )
+                }
 
                 when {
                     isLoading -> {

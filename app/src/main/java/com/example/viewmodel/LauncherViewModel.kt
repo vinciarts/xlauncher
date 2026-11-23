@@ -55,6 +55,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val widgetMenuTarget = MutableStateFlow<WidgetMenuTarget?>(null)
     private val resizeWidgetTarget = MutableStateFlow<PlacedWidget?>(null)
     private val moveWidgetTarget = MutableStateFlow<PlacedWidget?>(null)
+    private val widgetPickerPackageFilter = MutableStateFlow<String?>(null)
     private val homePageCommand = MutableStateFlow<HomePageCommand?>(null)
     private var nextPageCommandId = 0
     private val snackbarMessage = MutableStateFlow<String?>(null)
@@ -81,6 +82,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val widgetMenu: WidgetMenuTarget?,
         val resizeWidget: PlacedWidget?,
         val moveWidget: PlacedWidget?,
+        val widgetPickerPackageFilter: String?,
     )
 
     private data class WidgetOverlayState(
@@ -88,6 +90,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val widgetMenu: WidgetMenuTarget?,
         val resizeWidget: PlacedWidget?,
         val moveWidget: PlacedWidget?,
+        val widgetPickerPackageFilter: String?,
     )
 
     private data class AppOverlayState(
@@ -120,8 +123,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         widgetMenuTarget,
         resizeWidgetTarget,
         moveWidgetTarget,
-    ) { emptyAnchor, wMenu, wResize, wMove ->
-        WidgetOverlayState(emptyAnchor, wMenu, wResize, wMove)
+        widgetPickerPackageFilter,
+    ) { emptyAnchor, wMenu, wResize, wMove, pkgFilter ->
+        WidgetOverlayState(emptyAnchor, wMenu, wResize, wMove, pkgFilter)
     }
 
     private val overlayFlow = combine(
@@ -140,6 +144,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             widgetMenu = widgetOv.widgetMenu,
             resizeWidget = widgetOv.resizeWidget,
             moveWidget = widgetOv.moveWidget,
+            widgetPickerPackageFilter = widgetOv.widgetPickerPackageFilter,
         )
     }
 
@@ -254,6 +259,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             widgetMenuTarget = overlay.widgetMenu,
             resizeWidgetTarget = overlay.resizeWidget,
             moveWidgetTarget = overlay.moveWidget,
+            widgetPickerPackageFilter = overlay.widgetPickerPackageFilter,
             homePageCommand = nav.homePageCommand,
             snackbarMessage = overlay.snackbar,
         )
@@ -360,6 +366,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         widgetMenuTarget.value = null
         resizeWidgetTarget.value = null
         moveWidgetTarget.value = null
+        widgetPickerPackageFilter.value = null
         destination.value = LauncherDestination.HOME
         if (resetToFirstPage) {
             dispatchHomePageCommand(HomePageCommandType.FIRST_PAGE)
@@ -652,6 +659,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { prefsRepository.moveDrawerTab(tabId, delta) }
     }
 
+    fun setAllTabHidden(hidden: Boolean) {
+        viewModelScope.launch {
+            val ok = prefsRepository.setAllTabHidden(hidden)
+            if (!ok) {
+                snackbarMessage.value = getApplication<Application>().getString(R.string.drawer_tab_keep_one_visible)
+            }
+        }
+    }
+
+    fun setDrawerTabHidden(tabId: String, hidden: Boolean) {
+        viewModelScope.launch {
+            val ok = prefsRepository.setDrawerTabHidden(tabId, hidden)
+            if (!ok) {
+                snackbarMessage.value = getApplication<Application>().getString(R.string.drawer_tab_keep_one_visible)
+            }
+        }
+    }
+
     fun deleteDrawerTab(tabId: String) {
         viewModelScope.launch { prefsRepository.deleteDrawerTab(tabId) }
     }
@@ -666,11 +691,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         homeEmptyMenuAnchor.value = null
     }
 
-    fun openWidgetPicker() {
+    fun openWidgetPicker(packageName: String? = null) {
         homeEmptyMenuAnchor.value = null
-        appMenuTarget.value = null
+        clearAppMenuState()
         widgetMenuTarget.value = null
+        widgetPickerPackageFilter.value = packageName
         destination.value = LauncherDestination.WIDGET_PICKER
+    }
+
+    fun clearWidgetPickerPackageFilter() {
+        widgetPickerPackageFilter.value = null
     }
 
     fun openWallpaperPicker() {
@@ -749,15 +779,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private fun buildDrawerTabPages(apps: List<AppItem>, settings: LauncherSettings): List<DrawerTabPage> {
         val result = ArrayList<DrawerTabPage>(settings.drawerTabs.size + 1)
-        result.add(
-            DrawerTabPage(
-                id = DrawerTab.ALL_TAB_ID,
-                name = "",
-                isAllTab = true,
-                apps = apps,
+        if (!settings.isAllTabHidden) {
+            result.add(
+                DrawerTabPage(
+                    id = DrawerTab.ALL_TAB_ID,
+                    name = "",
+                    isAllTab = true,
+                    apps = apps,
+                )
             )
-        )
+        }
         for (tab in settings.drawerTabs) {
+            if (tab.isHidden) continue
             val keySet = tab.appKeys.toSet()
             result.add(
                 DrawerTabPage(
@@ -765,6 +798,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     name = tab.name,
                     isAllTab = false,
                     apps = if (keySet.isEmpty()) emptyList() else apps.filter { it.componentKey in keySet },
+                )
+            )
+        }
+        if (result.isEmpty()) {
+            result.add(
+                DrawerTabPage(
+                    id = DrawerTab.ALL_TAB_ID,
+                    name = "",
+                    isAllTab = true,
+                    apps = apps,
                 )
             )
         }

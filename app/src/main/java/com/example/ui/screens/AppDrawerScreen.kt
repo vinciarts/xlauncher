@@ -101,6 +101,7 @@ fun AppDrawerScreen(
     onRenameTab: (String, String) -> Unit,
     onSetTabApps: (String, Set<String>) -> Unit,
     onMoveTab: (String, Int) -> Unit,
+    onSetTabHidden: (String, Boolean) -> Unit,
     onDeleteTab: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -520,12 +521,16 @@ fun AppDrawerScreen(
             tab = editingTab,
             canMoveLeft = customIdx > 0,
             canMoveRight = customIdx in 0 until drawerTabs.lastIndex,
+            canHide = pages.size > 1,
             allApps = allApps,
-            onSave = { newName, appKeys ->
+            onSave = { newName, appKeys, isHidden ->
                 if (newName != editingTab.name) {
                     onRenameTab(editingTab.id, newName)
                 }
                 onSetTabApps(editingTab.id, appKeys)
+                if (isHidden != editingTab.isHidden) {
+                    onSetTabHidden(editingTab.id, isHidden)
+                }
                 editingTabId = null
             },
             onMoveLeft = { onMoveTab(editingTab.id, -1) },

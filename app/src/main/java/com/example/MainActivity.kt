@@ -442,6 +442,7 @@ private fun LauncherRoot(
                     onRenameTab = viewModel::renameDrawerTab,
                     onSetTabApps = viewModel::setDrawerTabApps,
                     onMoveTab = viewModel::moveDrawerTab,
+                    onSetTabHidden = viewModel::setDrawerTabHidden,
                     onDeleteTab = viewModel::deleteDrawerTab,
                 )
             }
@@ -471,6 +472,8 @@ private fun LauncherRoot(
                     onRenameDrawerTab = viewModel::renameDrawerTab,
                     onSetDrawerTabApps = viewModel::setDrawerTabApps,
                     onMoveDrawerTab = viewModel::moveDrawerTab,
+                    onSetAllTabHidden = viewModel::setAllTabHidden,
+                    onSetDrawerTabHidden = viewModel::setDrawerTabHidden,
                     onDeleteDrawerTab = viewModel::deleteDrawerTab,
                 )
             }
@@ -493,6 +496,8 @@ private fun LauncherRoot(
                     widgetHostController = widgetHostController,
                     onSelectWidget = onPickWidget,
                     onBack = { viewModel.returnHome() },
+                    filterPackageName = uiState.widgetPickerPackageFilter,
+                    onClearPackageFilter = viewModel::clearWidgetPickerPackageFilter,
                 )
             }
         }
@@ -502,7 +507,7 @@ private fun LauncherRoot(
         if (emptyMenuAnchor != null) {
             HomeEmptyMenuPopup(
                 anchorOffset = emptyMenuAnchor,
-                onAddWidget = viewModel::openWidgetPicker,
+                onAddWidget = { viewModel.openWidgetPicker() },
                 onOpenWallpaper = viewModel::openWallpaperPicker,
                 onOpenSettings = viewModel::openSettings,
                 onDismiss = viewModel::dismissHomeEmptyMenu,
@@ -555,9 +560,13 @@ private fun LauncherRoot(
         // Anchored native-style long-press popup menu next to the pressed app icon
         val menuTarget = uiState.appMenuTarget
         if (menuTarget != null) {
+            val hasWidgets = remember(menuTarget.app.packageName) {
+                widgetHostController.hasWidgetsForPackage(menuTarget.app.packageName)
+            }
             AppContextMenuPopup(
                 target = menuTarget,
                 isPinnedDock = menuTarget.app.componentKey in uiState.settings.dockKeys,
+                hasWidgets = hasWidgets,
                 appGestures = uiState.settings.appGestures[menuTarget.app.componentKey].orEmpty(),
                 appsByKey = uiState.appsByKey,
                 shortcutsByTargetKey = uiState.shortcutsByTargetKey,
@@ -570,6 +579,7 @@ private fun LauncherRoot(
                     viewModel.openDefaultHomeSettings()
                 },
                 onOpenLauncherSettings = viewModel::openSettings,
+                onOpenAppWidgets = { viewModel.openWidgetPicker(menuTarget.app.packageName) },
                 onOpenGestureConfig = { viewModel.openAppGestureConfig(menuTarget.app) },
                 onPinToCurrentHomePage = { viewModel.pinToCurrentHomePage(menuTarget.app) },
                 onRemoveFromHomePage = { viewModel.removeFromHomePage(menuTarget.app, menuTarget.sourcePageIndex) },

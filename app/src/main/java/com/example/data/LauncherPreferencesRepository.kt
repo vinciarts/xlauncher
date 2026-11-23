@@ -38,6 +38,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val HOME_GESTURE_RIGHT = stringPreferencesKey("home_gesture_right")
         val DRAWER_COLUMNS = intPreferencesKey("drawer_columns")
         val DRAWER_TABS = stringPreferencesKey("drawer_tabs")
+        val ALL_TAB_HIDDEN = booleanPreferencesKey("drawer_all_tab_hidden")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
     }
 
@@ -60,6 +61,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             ),
             drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4).coerceIn(4, 5),
             drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]),
+            isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
         )
     }
@@ -279,10 +281,48 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun setAllTabHidden(hidden: Boolean): Boolean {
+        var applied = true
+        context.launcherDataStore.edit { prefs ->
+            if (hidden) {
+                val tabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS])
+                if (tabs.none { !it.isHidden }) {
+                    applied = false
+                    return@edit
+                }
+            }
+            prefs[Keys.ALL_TAB_HIDDEN] = hidden
+        }
+        return applied
+    }
+
+    suspend fun setDrawerTabHidden(tabId: String, hidden: Boolean): Boolean {
+        var applied = true
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeDrawerTabs(prefs[Keys.DRAWER_TABS])
+            if (hidden) {
+                val allVisible = prefs[Keys.ALL_TAB_HIDDEN] != true
+                val otherVisibleTabs = current.count { it.id != tabId && !it.isHidden }
+                if (!allVisible && otherVisibleTabs == 0) {
+                    applied = false
+                    return@edit
+                }
+            }
+            val updated = current.map { tab ->
+                if (tab.id == tabId) tab.copy(isHidden = hidden) else tab
+            }
+            prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
+        }
+        return applied
+    }
+
     suspend fun deleteDrawerTab(tabId: String) {
         context.launcherDataStore.edit { prefs ->
             val updated = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).filterNot { it.id == tabId }
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
+            if (prefs[Keys.ALL_TAB_HIDDEN] == true && updated.none { !it.isHidden }) {
+                prefs[Keys.ALL_TAB_HIDDEN] = false
+            }
         }
     }
 
@@ -407,13 +447,14 @@ class LauncherPreferencesRepository(private val context: Context) {
         return result
     }
 
-    // Format: "encodedId|encodedName|key1,key2;..."
+    // Format: "encodedId|encodedName|key1,key2|0_or_1_hidden;..."
     private fun encodeDrawerTabs(tabs: List<DrawerTab>): String =
         tabs.joinToString(PAGE_SEP) { tab ->
             val encId = Uri.encode(tab.id)
             val encName = Uri.encode(tab.name)
             val encApps = tab.appKeys.distinct().joinToString(ITEM_SEP) { Uri.encode(it) }
-            "$encId$WIDGET_FIELD_SEP$encName$WIDGET_FIELD_SEP$encApps"
+            val hiddenFlag = if (tab.isHidden) "1" else "0"
+            "$encId$WIDGET_FIELD_SEP$encName$WIDGET_FIELD_SEP$encApps$WIDGET_FIELD_SEP$hiddenFlag"
         }
 
     private fun decodeDrawerTabs(raw: String?): List<DrawerTab> {
@@ -431,7 +472,8 @@ class LauncherPreferencesRepository(private val context: Context) {
             } else {
                 emptyList()
             }
-            DrawerTab(id = id, name = name, appKeys = keys)
+            val isHidden = parts.size >= 4 && parts[3] == "1"
+            DrawerTab(id = id, name = name, appKeys = keys, isHidden = isHidden)
         }
     }
 

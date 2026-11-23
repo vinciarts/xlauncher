@@ -17,6 +17,8 @@
     <string name="action_pin_dock">Add to Dock</string>
     <string name="action_unpin_dock">Remove from Dock</string>
     <string name="action_manage_drawer_tabs">Drawer tabs</string>
+    <string name="action_app_widgets">Widgets</string>
+    <string name="action_more_options">More</string>
     <string name="action_app_info">App info</string>
     <string name="action_uninstall">Uninstall</string>
     <string name="action_enable_app_shortcuts">Set as default home for shortcuts</string>
@@ -108,6 +110,10 @@
     <string name="drawer_app_tabs_title">Tabs · %1$s</string>
     <string name="drawer_tabs_empty_assign_hint">Create a custom tab below to organize this app.</string>
     <string name="drawer_tabs_limit_message">Up to 12 custom tabs allowed</string>
+    <string name="drawer_tab_visible_toggle">Show in drawer</string>
+    <string name="drawer_tab_hidden_badge">Hidden</string>
+    <string name="drawer_tab_visibility_hint">Turn off a tab to hide it from the drawer. Keep at least one tab visible.</string>
+    <string name="drawer_tab_keep_one_visible">At least one tab must stay visible</string>
 
     <string name="dialog_done">Done</string>
     <string name="dialog_cancel">Cancel</string>
@@ -131,6 +137,7 @@
     <string name="home_menu_wallpaper">Wallpaper</string>
     <string name="home_menu_settings">Home settings</string>
     <string name="widget_picker_title">Widgets</string>
+    <string name="widget_picker_show_all">All widgets</string>
     <string name="search_widgets_placeholder">Search widgets or apps…</string>
     <string name="widget_picker_empty">No widgets available</string>
     <string name="widget_count_suffix">%1$d widgets</string>

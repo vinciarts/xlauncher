@@ -289,6 +289,17 @@ class WidgetHostController(private val context: Context) {
         }
     }
 
+    fun hasWidgetsForPackage(packageName: String): Boolean {
+        if (packageName == context.packageName) return false
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appWidgetManager.getInstalledProvidersForPackage(packageName, null).isNotEmpty()
+            } else {
+                appWidgetManager.installedProviders.any { it.provider?.packageName == packageName }
+            }
+        }.getOrDefault(false)
+    }
+
     suspend fun loadWidgetCatalog(gridColumns: Int): List<WidgetCatalogItem> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val providers = runCatching { appWidgetManager.installedProviders }.getOrNull().orEmpty()

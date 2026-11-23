@@ -209,6 +209,7 @@ data class DrawerTab(
     val id: String,
     val name: String,
     val appKeys: List<String> = emptyList(),
+    val isHidden: Boolean = false,
 ) {
     companion object {
         const val ALL_TAB_ID = "all"
@@ -238,6 +239,7 @@ data class LauncherSettings(
     val drawerColumns: Int = 4,
     // Custom tabs shown after the built-in "All" tab in the App Drawer
     val drawerTabs: List<DrawerTab> = emptyList(),
+    val isAllTabHidden: Boolean = false,
     val hasSeededDefaults: Boolean = false,
 ) {
     companion object {
@@ -285,6 +287,7 @@ data class LauncherUiState(
     val widgetMenuTarget: WidgetMenuTarget? = null,
     val resizeWidgetTarget: PlacedWidget? = null,
     val moveWidgetTarget: PlacedWidget? = null,
+    val widgetPickerPackageFilter: String? = null,
     val homePageCommand: HomePageCommand? = null,
     val snackbarMessage: String? = null,
 )

@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -193,14 +194,16 @@ fun EditDrawerTabDialog(
     tab: DrawerTab,
     canMoveLeft: Boolean,
     canMoveRight: Boolean,
+    canHide: Boolean,
     allApps: List<AppItem>,
-    onSave: (newName: String, appKeys: Set<String>) -> Unit,
+    onSave: (newName: String, appKeys: Set<String>, isHidden: Boolean) -> Unit,
     onMoveLeft: () -> Unit,
     onMoveRight: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var tabName by remember(tab.id) { mutableStateOf(tab.name) }
+    var isHidden by remember(tab.id) { mutableStateOf(tab.isHidden) }
     var searchQuery by remember(tab.id) { mutableStateOf("") }
     val selectedKeys = remember(tab.id) {
         mutableStateListOf<String>().apply { addAll(tab.appKeys) }
@@ -271,7 +274,27 @@ fun EditDrawerTabDialog(
                         .testTag("edit_tab_name_input"),
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.drawer_tab_visible_toggle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Switch(
+                        checked = !isHidden,
+                        enabled = isHidden || canHide,
+                        onCheckedChange = { visible -> isHidden = !visible },
+                        modifier = Modifier.testTag("edit_tab_visibility_switch"),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     text = stringResource(R.string.drawer_tab_pick_apps_label, selectedKeys.size),
@@ -355,7 +378,7 @@ fun EditDrawerTabDialog(
         confirmButton = {
             TextButton(
                 enabled = tabName.isNotBlank(),
-                onClick = { onSave(tabName.trim(), selectedKeys.toSet()) },
+                onClick = { onSave(tabName.trim(), selectedKeys.toSet(), isHidden) },
                 modifier = Modifier.testTag("edit_tab_confirm"),
             ) {
                 Text(stringResource(R.string.dialog_done))
@@ -450,6 +473,14 @@ fun AssignAppTabsDialog(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f),
                                 )
+                                if (tab.isHidden) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.drawer_tab_hidden_badge),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
