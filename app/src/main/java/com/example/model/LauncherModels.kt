@@ -92,6 +92,33 @@ sealed class HomeGestureAction {
     }
 
     companion object {
+        /** Single source of truth for built-in Launcher action candidates. */
+        val launcherActions: List<HomeGestureAction> = listOf(
+            None,
+            OpenDrawer,
+            OpenSearch,
+            OpenSettings,
+            GoFirstPage,
+            PrevHomePage,
+            NextHomePage,
+        )
+
+        /** Single source of truth for System action candidates. */
+        val systemActions: List<HomeGestureAction> = listOf(
+            ExpandNotifications,
+            ExpandQuickSettings,
+            ToggleFlashlight,
+            OpenVolumePanel,
+            ToggleVibrateMode,
+            OpenVoiceAssist,
+            OpenCamera,
+            OpenDialer,
+            OpenWifiPanel,
+            OpenBluetoothSettings,
+            OpenWallpaperPicker,
+            OpenSystemSettings,
+        )
+
         fun decode(raw: String?): HomeGestureAction = when {
             raw.isNullOrBlank() || raw == "NONE" -> None
             raw == "OPEN_DRAWER" -> OpenDrawer
@@ -254,6 +281,38 @@ data class DrawerTabPage(
 )
 
 @Immutable
+data class ContactSearchResult(
+    val contactId: Long,
+    val lookupKey: String,
+    val displayName: String,
+    val phoneNumber: String?,
+)
+
+@Immutable
+data class FileSearchResult(
+    val documentUri: String,
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val parentFolderName: String,
+)
+
+@Immutable
+data class IndexedFolderInfo(
+    val uri: String,
+    val displayName: String,
+)
+
+@Immutable
+data class SearchProviderApp(
+    val packageName: String,
+    val activityName: String,
+    val label: String,
+    val action: String,
+    val icon: ImageBitmap?,
+)
+
+@Immutable
 data class LauncherSettings(
     val homePageCount: Int = 2,
     val homeLoopPaging: Boolean = true,
@@ -266,12 +325,26 @@ data class LauncherSettings(
     val appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>> = persistentMapOf(),
     // 4-direction Home desktop swipe gestures
     val homeGestures: ImmutableMap<SwipeDirection, HomeGestureAction> = defaultHomeGestures(),
+    // Action triggered when pressing Home while already on a clean desktop
+    val homeButtonAction: HomeGestureAction = HomeGestureAction.GoFirstPage,
     val drawerColumns: Int = 4,
     // Custom tabs shown after the built-in "All" tab in the App Drawer
     val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,
     val hasSeededDefaults: Boolean = false,
+    // Opt-in Universal Search sources (ALL off by default to keep search noise-free)
+    val searchShortcutsEnabled: Boolean = false,
+    val searchContactsEnabled: Boolean = false,
+    val searchFilesEnabled: Boolean = false,
+    val searchFileTreeUris: ImmutableList<String> = persistentListOf(),
+    val searchThirdPartyPackages: ImmutableList<String> = persistentListOf(),
 ) {
+    val hasAnyExtraSearchEnabled: Boolean
+        get() = searchShortcutsEnabled ||
+            searchContactsEnabled ||
+            (searchFilesEnabled && searchFileTreeUris.isNotEmpty()) ||
+            searchThirdPartyPackages.isNotEmpty()
+
     companion object {
         fun defaultHomeGestures(): ImmutableMap<SwipeDirection, HomeGestureAction> = persistentMapOf(
             SwipeDirection.UP to HomeGestureAction.OpenDrawer,
@@ -302,6 +375,13 @@ data class LauncherUiState(
         )
     ),
     val filteredDrawerApps: ImmutableList<AppItem> = persistentListOf(),
+    val matchedShortcuts: ImmutableList<AppShortcutItem> = persistentListOf(),
+    val matchedContacts: ImmutableList<ContactSearchResult> = persistentListOf(),
+    val matchedFiles: ImmutableList<FileSearchResult> = persistentListOf(),
+    val availableSearchProviders: ImmutableList<SearchProviderApp> = persistentListOf(),
+    val activeSearchProviders: ImmutableList<SearchProviderApp> = persistentListOf(),
+    val indexedFolders: ImmutableList<IndexedFolderInfo> = persistentListOf(),
+    val indexedFileCount: Int = 0,
     val settings: LauncherSettings = LauncherSettings(),
     val destination: LauncherDestination = LauncherDestination.HOME,
     val currentHomePage: Int = 0,

@@ -1,8 +1,12 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,27 +23,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -49,8 +53,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -58,10 +62,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.WidgetCatalogItem
+import com.example.search.PinyinSearchEngine
+import com.example.ui.components.ExpressiveSearchField
 import com.example.widget.WidgetHostController
 
 /**
- * Full-screen Material 3 widget picker using unmodified native LazyColumn scrolling & overscroll stretch.
+ * Full-screen Material 3 Expressive widget picker with MediumFlexibleTopAppBar,
+ * official SearchBar input field, and SegmentedListItem app groups.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -77,6 +84,9 @@ fun WidgetPickerScreen(
 ) {
     BackHandler(onBack = onBack)
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val motionScheme = MaterialTheme.motionScheme
+    val segmentedColors = ListItemDefaults.segmentedColors()
     var searchQuery by remember(filterPackageName) { mutableStateOf("") }
     val expandedPackages = remember { mutableStateMapOf<String, Boolean>() }
 
@@ -91,9 +101,8 @@ fun WidgetPickerScreen(
             baseCatalog
         } else {
             baseCatalog.filter {
-                it.appLabel.contains(q, ignoreCase = true) ||
-                    it.widgetLabel.contains(q, ignoreCase = true) ||
-                    it.packageName.contains(q, ignoreCase = true)
+                PinyinSearchEngine.matches(q, it.appLabel, it.packageName) ||
+                    PinyinSearchEngine.matches(q, it.widgetLabel)
             }
         }
         filtered.groupBy { it.packageName }.entries.toList()
@@ -107,7 +116,7 @@ fun WidgetPickerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            MediumFlexibleTopAppBar(
                 title = {
                     Text(
                         text = filteredAppLabel ?: stringResource(R.string.widget_picker_title),
@@ -136,9 +145,12 @@ fun WidgetPickerScreen(
                         }
                     }
                 },
+                scrollBehavior = scrollBehavior,
             )
         },
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
     ) { innerPadding ->
         Box(
             contentAlignment = Alignment.TopCenter,
@@ -153,34 +165,12 @@ fun WidgetPickerScreen(
                     .navigationBarsPadding(),
             ) {
                 if (filterPackageName.isNullOrBlank()) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        singleLine = true,
-                        shape = RoundedCornerShape(28.dp),
-                        placeholder = {
-                            Text(text = stringResource(R.string.search_widgets_placeholder))
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = null,
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.cd_clear_search),
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .testTag("widget_search_input"),
+                    ExpressiveSearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        placeholder = stringResource(R.string.search_widgets_placeholder),
+                        inputTestTag = "widget_search_input",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
 
@@ -214,62 +204,69 @@ fun WidgetPickerScreen(
                     else -> {
                         val autoExpand = searchQuery.isNotBlank() || grouped.size <= 3
                         LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f),
                         ) {
-                            items(items = grouped, key = { it.key }) { (pkg, widgets) ->
+                            itemsIndexed(
+                                items = grouped,
+                                key = { _, entry -> entry.key },
+                            ) { index, (pkg, widgets) ->
                                 val first = widgets.first()
                                 val expanded = autoExpand || (expandedPackages[pkg] == true)
+                                val itemShapes = ListItemDefaults.segmentedShapes(
+                                    index = index,
+                                    count = grouped.size,
+                                )
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    shape = itemShapes.shape,
+                                    color = segmentedColors.containerColor,
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .minimumInteractiveComponentSize()
-                                                .clickable {
-                                                    expandedPackages[pkg] = !expanded
+                                        SegmentedListItem(
+                                            onClick = { expandedPackages[pkg] = !expanded },
+                                            shapes = itemShapes,
+                                            colors = segmentedColors,
+                                            leadingContent = if (first.appIcon != null) {
+                                                {
+                                                    Image(
+                                                        bitmap = first.appIcon,
+                                                        contentDescription = first.appLabel,
+                                                        contentScale = ContentScale.Fit,
+                                                        modifier = Modifier.size(36.dp),
+                                                    )
                                                 }
-                                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                                        ) {
-                                            if (first.appIcon != null) {
-                                                Image(
-                                                    bitmap = first.appIcon,
-                                                    contentDescription = first.appLabel,
-                                                    contentScale = ContentScale.Fit,
-                                                    modifier = Modifier.size(36.dp),
+                                            } else {
+                                                null
+                                            },
+                                            supportingContent = {
+                                                Text(text = stringResource(R.string.widget_count_suffix, widgets.size))
+                                            },
+                                            trailingContent = {
+                                                Icon(
+                                                    imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                                    contentDescription = null,
                                                 )
-                                                Spacer(modifier = Modifier.width(14.dp))
-                                            }
-                                            Column(modifier = Modifier.weight(1f)) {
+                                            },
+                                            content = {
                                                 Text(
                                                     text = first.appLabel,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
-                                                Text(
-                                                    text = stringResource(R.string.widget_count_suffix, widgets.size),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                            Icon(
-                                                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                            },
+                                        )
 
-                                        if (expanded) {
+                                        AnimatedVisibility(
+                                            visible = expanded,
+                                            enter = expandVertically(motionScheme.defaultSpatialSpec()) +
+                                                fadeIn(motionScheme.fastEffectsSpec()),
+                                            exit = shrinkVertically(motionScheme.defaultSpatialSpec()) +
+                                                fadeOut(motionScheme.fastEffectsSpec()),
+                                        ) {
                                             Column(
                                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                                 modifier = Modifier
@@ -311,20 +308,21 @@ private fun WidgetCatalogRow(
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+    Card(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
             .testTag("widget_item_${item.providerComponent}"),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -332,7 +330,7 @@ private fun WidgetCatalogRow(
             ) {
                 Text(
                     text = item.widgetLabel,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -345,7 +343,7 @@ private fun WidgetCatalogRow(
                         item.spanX,
                         item.spanY,
                     ),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,22 +11,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,10 +45,12 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.AppItem
 import com.example.model.DrawerTab
+import com.example.search.PinyinSearchEngine
 
 /**
- * Native Material 3 dialog to create a new App Drawer tab and optionally pick initial apps.
+ * Native Material 3 Expressive dialog to create a new App Drawer tab and optionally pick initial apps.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CreateDrawerTabDialog(
     allApps: List<AppItem>,
@@ -60,14 +60,14 @@ fun CreateDrawerTabDialog(
     var tabName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     val selectedKeys = remember { mutableStateListOf<String>() }
+    val dialogSegmentedColors = ListItemDefaults.segmentedColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
 
     val filteredApps = remember(allApps, searchQuery) {
         val q = searchQuery.trim()
         if (q.isEmpty()) allApps
-        else allApps.filter {
-            it.label.contains(q, ignoreCase = true) ||
-                it.packageName.contains(q, ignoreCase = true)
-        }
+        else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
     }
 
     AlertDialog(
@@ -96,75 +96,52 @@ fun CreateDrawerTabDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    placeholder = { Text(stringResource(R.string.search_apps_placeholder)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.cd_clear_search),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                ExpressiveSearchField(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    placeholder = stringResource(R.string.search_apps_placeholder),
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 260.dp),
                 ) {
-                    items(items = filteredApps, key = { it.componentKey }) { app ->
+                    itemsIndexed(
+                        items = filteredApps,
+                        key = { _, app -> app.componentKey },
+                    ) { index, app ->
                         val checked = app.componentKey in selectedKeys
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    if (checked) selectedKeys.remove(app.componentKey)
-                                    else selectedKeys.add(app.componentKey)
+                        SegmentedListItem(
+                            checked = checked,
+                            onCheckedChange = { isChecked ->
+                                if (isChecked) {
+                                    if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
+                                } else {
+                                    selectedKeys.remove(app.componentKey)
                                 }
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
-                        ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = { isChecked ->
-                                    if (isChecked) {
-                                        if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
-                                    } else {
-                                        selectedKeys.remove(app.componentKey)
-                                    }
-                                },
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            AppIconImage(app = app, size = 30.dp)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = app.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                            },
+                            shapes = ListItemDefaults.segmentedShapes(index = index, count = filteredApps.size),
+                            colors = dialogSegmentedColors,
+                            leadingContent = {
+                                AppIconImage(app = app, size = 28.dp)
+                            },
+                            trailingContent = {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                            },
+                            content = {
+                                Text(
+                                    text = app.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -187,8 +164,9 @@ fun CreateDrawerTabDialog(
 }
 
 /**
- * Native Material 3 dialog to rename, pick apps for, reorder, or delete a custom App Drawer tab.
+ * Native Material 3 Expressive dialog to rename, pick apps for, reorder, or delete a custom App Drawer tab.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun EditDrawerTabDialog(
     tab: DrawerTab,
@@ -208,14 +186,14 @@ fun EditDrawerTabDialog(
     val selectedKeys = remember(tab.id) {
         mutableStateListOf<String>().apply { addAll(tab.appKeys) }
     }
+    val dialogSegmentedColors = ListItemDefaults.segmentedColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
 
     val filteredApps = remember(allApps, searchQuery, selectedKeys.size) {
         val q = searchQuery.trim()
         val matched = if (q.isEmpty()) allApps
-        else allApps.filter {
-            it.label.contains(q, ignoreCase = true) ||
-                it.packageName.contains(q, ignoreCase = true)
-        }
+        else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
         if (q.isEmpty()) {
             matched.sortedBy { if (it.componentKey in selectedKeys) 0 else 1 }
         } else {
@@ -274,27 +252,28 @@ fun EditDrawerTabDialog(
                         .testTag("edit_tab_name_input"),
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = stringResource(R.string.drawer_tab_visible_toggle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Switch(
-                        checked = !isHidden,
-                        enabled = isHidden || canHide,
-                        onCheckedChange = { visible -> isHidden = !visible },
-                        modifier = Modifier.testTag("edit_tab_visibility_switch"),
-                    )
-                }
+                SegmentedListItem(
+                    checked = !isHidden,
+                    onCheckedChange = { visible -> isHidden = !visible },
+                    enabled = isHidden || canHide,
+                    shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                    colors = dialogSegmentedColors,
+                    trailingContent = {
+                        Switch(
+                            checked = !isHidden,
+                            enabled = isHidden || canHide,
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("edit_tab_visibility_switch"),
+                        )
+                    },
+                    content = {
+                        Text(text = stringResource(R.string.drawer_tab_visible_toggle))
+                    },
+                )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = stringResource(R.string.drawer_tab_pick_apps_label, selectedKeys.size),
@@ -302,75 +281,52 @@ fun EditDrawerTabDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    placeholder = { Text(stringResource(R.string.search_apps_placeholder)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.cd_clear_search),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                ExpressiveSearchField(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    placeholder = stringResource(R.string.search_apps_placeholder),
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 260.dp),
                 ) {
-                    items(items = filteredApps, key = { it.componentKey }) { app ->
+                    itemsIndexed(
+                        items = filteredApps,
+                        key = { _, app -> app.componentKey },
+                    ) { index, app ->
                         val checked = app.componentKey in selectedKeys
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    if (checked) selectedKeys.remove(app.componentKey)
-                                    else selectedKeys.add(app.componentKey)
+                        SegmentedListItem(
+                            checked = checked,
+                            onCheckedChange = { isChecked ->
+                                if (isChecked) {
+                                    if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
+                                } else {
+                                    selectedKeys.remove(app.componentKey)
                                 }
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
-                        ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = { isChecked ->
-                                    if (isChecked) {
-                                        if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
-                                    } else {
-                                        selectedKeys.remove(app.componentKey)
-                                    }
-                                },
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            AppIconImage(app = app, size = 30.dp)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = app.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                            },
+                            shapes = ListItemDefaults.segmentedShapes(index = index, count = filteredApps.size),
+                            colors = dialogSegmentedColors,
+                            leadingContent = {
+                                AppIconImage(app = app, size = 28.dp)
+                            },
+                            trailingContent = {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                            },
+                            content = {
+                                Text(
+                                    text = app.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -393,9 +349,10 @@ fun EditDrawerTabDialog(
 }
 
 /**
- * Native Material 3 dialog opened from an app's long-press menu in the App Drawer
+ * Native Material 3 Expressive dialog opened from an app's long-press menu in the App Drawer
  * to assign/remove the app across custom tabs or create a new tab directly.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AssignAppTabsDialog(
     app: AppItem,
@@ -411,6 +368,9 @@ fun AssignAppTabsDialog(
     }
     var creatingNew by remember { mutableStateOf(false) }
     var newTabName by remember { mutableStateOf("") }
+    val dialogSegmentedColors = ListItemDefaults.segmentedColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -427,7 +387,7 @@ fun AssignAppTabsDialog(
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (customTabs.isEmpty() && !creatingNew) {
@@ -438,55 +398,50 @@ fun AssignAppTabsDialog(
                     )
                 } else if (customTabs.isNotEmpty()) {
                     LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 260.dp),
                     ) {
-                        items(items = customTabs, key = { it.id }) { tab ->
+                        itemsIndexed(
+                            items = customTabs,
+                            key = { _, tab -> tab.id },
+                        ) { index, tab ->
                             val checked = tab.id in selectedIds
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        if (checked) selectedIds.remove(tab.id)
-                                        else selectedIds.add(tab.id)
+                            SegmentedListItem(
+                                checked = checked,
+                                onCheckedChange = { isChecked ->
+                                    if (isChecked) {
+                                        if (tab.id !in selectedIds) selectedIds.add(tab.id)
+                                    } else {
+                                        selectedIds.remove(tab.id)
                                     }
-                                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                            ) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = { isChecked ->
-                                        if (isChecked) {
-                                            if (tab.id !in selectedIds) selectedIds.add(tab.id)
-                                        } else {
-                                            selectedIds.remove(tab.id)
-                                        }
-                                    },
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = tab.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (tab.isHidden) {
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                },
+                                shapes = ListItemDefaults.segmentedShapes(index = index, count = customTabs.size),
+                                colors = dialogSegmentedColors,
+                                supportingContent = if (tab.isHidden) {
+                                    {
+                                        Text(text = stringResource(R.string.drawer_tab_hidden_badge))
+                                    }
+                                } else {
+                                    null
+                                },
+                                trailingContent = {
+                                    Checkbox(checked = checked, onCheckedChange = null)
+                                },
+                                content = {
                                     Text(
-                                        text = stringResource(R.string.drawer_tab_hidden_badge),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        text = tab.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
-                                }
-                            }
+                                },
+                            )
                         }
                     }
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                 if (creatingNew) {
                     Row(

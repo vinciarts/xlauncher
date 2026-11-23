@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private var pendingWidgetInfo: AppWidgetProviderInfo? = null
     private var pendingWidgetPage: Int = 0
     private var pendingWidgetIsReconfigure: Boolean = false
+    private var isActivityStarted: Boolean = false
 
     private val bindWidgetLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -117,6 +118,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        isActivityStarted = true
         widgetHostController.startListening()
         val pkgFilter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -131,6 +133,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshDefaultLauncherStatus()
+        viewModel.refreshSearchSourcesIfEnabled()
         pruneOrphanedWidgets()
         hideSoftKeyboardIfOnHome()
     }
@@ -143,6 +146,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        isActivityStarted = false
         super.onStop()
         widgetHostController.stopListening()
         runCatching { unregisterReceiver(packageChangeReceiver) }
@@ -156,7 +160,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
-            viewModel.returnHome(resetToFirstPage = true)
+            val broughtToFront = (intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT) != 0
+            viewModel.handleHomeButton(alreadyInForeground = isActivityStarted && !broughtToFront)
             hideSoftKeyboardIfOnHome()
         }
     }
@@ -435,6 +440,7 @@ private fun LauncherRoot(
             homeGridColumns = uiState.settings.homeGridColumns,
             homeLoopPaging = uiState.settings.homeLoopPaging,
             maxHomePages = LauncherPreferencesRepository.MAX_HOME_PAGES,
+            maxDockItems = LauncherPreferencesRepository.MAX_DOCK_ITEMS,
             currentHomePage = uiState.currentHomePage,
             homePageCommand = uiState.homePageCommand,
             resizingWidgetId = uiState.resizingWidgetId,
@@ -451,6 +457,10 @@ private fun LauncherRoot(
             onMoveWidgetToCell = viewModel::moveWidgetToCell,
             onMoveHomeAppToNewPage = viewModel::moveHomeAppToNewPage,
             onMoveWidgetToNewPage = viewModel::moveWidgetToNewPage,
+            onReorderDockApp = viewModel::reorderDockApp,
+            onMoveDockAppToHomeCell = viewModel::moveDockAppToHomeCell,
+            onMoveDockAppToNewPage = viewModel::moveDockAppToNewPage,
+            onMoveHomeAppToDock = viewModel::moveHomeAppToDock,
             onHomeSwipe = viewModel::onHomeSwiped,
             onEmptyLongPress = viewModel::openHomeEmptyMenu,
             onEmptyMenuAddWidget = { viewModel.openWidgetPicker() },
@@ -494,6 +504,11 @@ private fun LauncherRoot(
                     drawerTabs = uiState.settings.drawerTabs,
                     drawerTabPages = uiState.drawerTabPages,
                     filteredDrawerApps = uiState.filteredDrawerApps,
+                    hasAnyExtraSearchEnabled = uiState.settings.hasAnyExtraSearchEnabled,
+                    matchedShortcuts = uiState.matchedShortcuts,
+                    matchedContacts = uiState.matchedContacts,
+                    matchedFiles = uiState.matchedFiles,
+                    activeSearchProviders = uiState.activeSearchProviders,
                     drawerSearchQuery = uiState.drawerSearchQuery,
                     autoFocusDrawerSearch = uiState.autoFocusDrawerSearch,
                     drawerColumns = uiState.settings.drawerColumns,
@@ -501,6 +516,11 @@ private fun LauncherRoot(
                     onSearchQueryChange = viewModel::updateSearchQuery,
                     onAutoFocusConsumed = viewModel::clearAutoFocusSearch,
                     onAppClick = viewModel::launchApp,
+                    onLaunchShortcut = viewModel::launchShortcut,
+                    onOpenContact = viewModel::openContact,
+                    onDialContact = viewModel::dialContact,
+                    onOpenFile = viewModel::openFile,
+                    onLaunchThirdPartySearch = viewModel::launchThirdPartySearch,
                     appMenuHost = appMenuHost,
                     onCreateTab = viewModel::createDrawerTab,
                     onRenameTab = viewModel::renameDrawerTab,
@@ -531,6 +551,7 @@ private fun LauncherRoot(
                     onSetHomeLoopPaging = viewModel::setHomeLoopPaging,
                     onSetHomeGridColumns = viewModel::setHomeGridColumns,
                     onSetHomeGesture = viewModel::setHomeGesture,
+                    onSetHomeButtonAction = viewModel::setHomeButtonAction,
                     onSetDrawerColumns = viewModel::setDrawerColumns,
                     onCreateDrawerTab = viewModel::createDrawerTab,
                     onRenameDrawerTab = viewModel::renameDrawerTab,
@@ -539,6 +560,13 @@ private fun LauncherRoot(
                     onSetAllTabHidden = viewModel::setAllTabHidden,
                     onSetDrawerTabHidden = viewModel::setDrawerTabHidden,
                     onDeleteDrawerTab = viewModel::deleteDrawerTab,
+                    onSetSearchShortcutsEnabled = viewModel::setSearchShortcutsEnabled,
+                    onSetSearchContactsEnabled = viewModel::setSearchContactsEnabled,
+                    onContactsPermissionDenied = viewModel::onContactsPermissionDenied,
+                    onSetSearchFilesEnabled = viewModel::setSearchFilesEnabled,
+                    onAddSearchFileFolder = viewModel::addSearchFileFolder,
+                    onRemoveSearchFileFolder = viewModel::removeSearchFileFolder,
+                    onSetSearchThirdPartyAppEnabled = viewModel::setSearchThirdPartyAppEnabled,
                 )
             }
         }

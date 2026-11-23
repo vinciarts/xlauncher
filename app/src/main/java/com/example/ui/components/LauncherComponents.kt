@@ -95,6 +95,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
 
 private class CoordinatesHolder(var coords: LayoutCoordinates? = null)
+private class PointerIdHolder(var id: Long? = null)
 
 @Composable
 fun AppIconImage(
@@ -163,6 +164,7 @@ fun AppIconTile(
     val hasGestures = boundDirections.isNotEmpty()
     val dragEnabled = onDragStart != null
     val coordsHolder = remember { CoordinatesHolder() }
+    val pointerIdHolder = remember { PointerIdHolder() }
     var longPressTriggeredInGesture by remember { mutableStateOf(false) }
 
     val viewConfig = remember(context) { ViewConfiguration.get(context) }
@@ -354,13 +356,15 @@ fun AppIconTile(
                 }
             }
     } else {
-        val swipeModifier = if (hasGestures) {
-            Modifier.pointerInput(app.componentKey, pagingTouchSlopPx, minFlingVelocityPx) {
+        val swipeModifier = if (hasGestures || onDownPointer != null) {
+            Modifier.pointerInput(app.componentKey, hasGestures, pagingTouchSlopPx, minFlingVelocityPx) {
                 val touchSlop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     longPressTriggeredInGesture = false
+                    pointerIdHolder.id = down.id.value
                     currentOnDownPointer?.invoke(down.id.value, currentBoundDirections)
+                    if (!hasGestures) return@awaitEachGesture
 
                     val velocityTracker = VelocityTracker()
                     velocityTracker.addPosition(down.uptimeMillis, down.position)
@@ -423,6 +427,10 @@ fun AppIconTile(
             onClick = { currentOnClick() },
             onLongClick = {
                 longPressTriggeredInGesture = true
+                // Claim all 4 directions for this active pointer so HomeScreen gestures never fire after menu opens
+                pointerIdHolder.id?.let { id ->
+                    currentOnDownPointer?.invoke(id, SwipeDirection.entries.toSet())
+                }
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 currentOnLongClick()
             },

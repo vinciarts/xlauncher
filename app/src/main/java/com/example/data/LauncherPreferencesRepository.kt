@@ -42,10 +42,16 @@ class LauncherPreferencesRepository(private val context: Context) {
         val HOME_GESTURE_DOWN = stringPreferencesKey("home_gesture_down")
         val HOME_GESTURE_LEFT = stringPreferencesKey("home_gesture_left")
         val HOME_GESTURE_RIGHT = stringPreferencesKey("home_gesture_right")
+        val HOME_BUTTON_ACTION = stringPreferencesKey("home_button_action")
         val DRAWER_COLUMNS = intPreferencesKey("drawer_columns")
         val DRAWER_TABS = stringPreferencesKey("drawer_tabs")
         val ALL_TAB_HIDDEN = booleanPreferencesKey("drawer_all_tab_hidden")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
+        val SEARCH_SHORTCUTS_ENABLED = booleanPreferencesKey("search_shortcuts_enabled")
+        val SEARCH_CONTACTS_ENABLED = booleanPreferencesKey("search_contacts_enabled")
+        val SEARCH_FILES_ENABLED = booleanPreferencesKey("search_files_enabled")
+        val SEARCH_FILE_TREE_URIS = stringPreferencesKey("search_file_tree_uris")
+        val SEARCH_THIRD_PARTY_PACKAGES = stringPreferencesKey("search_third_party_packages")
     }
 
     val settingsFlow: Flow<LauncherSettings> = context.launcherDataStore.data.map { prefs ->
@@ -70,10 +76,17 @@ class LauncherPreferencesRepository(private val context: Context) {
                 SwipeDirection.LEFT to HomeGestureAction.decode(prefs[Keys.HOME_GESTURE_LEFT]),
                 SwipeDirection.RIGHT to HomeGestureAction.decode(prefs[Keys.HOME_GESTURE_RIGHT]),
             ),
+            homeButtonAction = prefs[Keys.HOME_BUTTON_ACTION]?.let { HomeGestureAction.decode(it) }
+                ?: HomeGestureAction.GoFirstPage,
             drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4).coerceIn(4, 5),
             drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toImmutableList(),
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
+            searchShortcutsEnabled = prefs[Keys.SEARCH_SHORTCUTS_ENABLED] ?: false,
+            searchContactsEnabled = prefs[Keys.SEARCH_CONTACTS_ENABLED] ?: false,
+            searchFilesEnabled = prefs[Keys.SEARCH_FILES_ENABLED] ?: false,
+            searchFileTreeUris = decodeEncodedList(prefs[Keys.SEARCH_FILE_TREE_URIS]).toImmutableList(),
+            searchThirdPartyPackages = decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).toImmutableList(),
         )
     }
 
@@ -514,6 +527,187 @@ class LauncherPreferencesRepository(private val context: Context) {
         return success
     }
 
+    suspend fun reorderDockApp(componentKey: String, targetIndex: Int) {
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
+            val fromIndex = current.indexOf(componentKey)
+            if (fromIndex < 0) return@edit
+            val clampedTarget = targetIndex.coerceIn(0, current.lastIndex)
+            if (fromIndex == clampedTarget) return@edit
+            current.removeAt(fromIndex)
+            current.add(clampedTarget, componentKey)
+            prefs[Keys.DOCK_KEYS] = encodeList(current)
+        }
+    }
+
+    suspend fun moveDockAppToHomeCell(
+        componentKey: String,
+        targetPage: Int,
+        targetCellX: Int,
+        targetCellY: Int,
+    ) {
+        context.launcherDataStore.edit { prefs ->
+            val currentDock = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
+            val dockIndex = currentDock.indexOf(componentKey)
+            if (dockIndex < 0) return@edit
+
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            var currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val clampedPage = targetPage.coerceIn(0, MAX_HOME_PAGES - 1)
+            if (clampedPage >= currentCount) {
+                currentCount = clampedPage + 1
+                prefs[Keys.HOME_PAGE_COUNT] = currentCount
+            }
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val cx = targetCellX.coerceIn(0, cols - 1)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - 1)
+
+            val targetPageWidgets = normW.filter { it.pageIndex == clampedPage }
+            val widgetOcc = HomeGridEngine.buildOccupancy(targetPageWidgets, emptyList(), cols)
+            if (widgetOcc[cy][cx]) return@edit
+
+            val occupant = normA.firstOrNull {
+                it.pageIndex == clampedPage && it.cellX == cx && it.cellY == cy
+            }
+
+            currentDock.removeAt(dockIndex)
+            val updatedApps = normA.toMutableList()
+            if (occupant != null) {
+                if (occupant.componentKey != componentKey) {
+                    updatedApps.removeAll {
+                        it.pageIndex == clampedPage &&
+                            (it.componentKey == occupant.componentKey || it.componentKey == componentKey)
+                    }
+                    updatedApps.add(
+                        PlacedHomeApp(
+                            componentKey = componentKey,
+                            pageIndex = clampedPage,
+                            cellX = cx,
+                            cellY = cy,
+                        )
+                    )
+                    if (!currentDock.contains(occupant.componentKey)) {
+                        currentDock.add(dockIndex.coerceIn(0, currentDock.size), occupant.componentKey)
+                    }
+                }
+            } else {
+                updatedApps.removeAll { it.pageIndex == clampedPage && it.componentKey == componentKey }
+                updatedApps.add(
+                    PlacedHomeApp(
+                        componentKey = componentKey,
+                        pageIndex = clampedPage,
+                        cellX = cx,
+                        cellY = cy,
+                    )
+                )
+            }
+
+            prefs[Keys.DOCK_KEYS] = encodeList(currentDock)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedApps)
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+        }
+    }
+
+    suspend fun insertHomePageAndMoveDockApp(
+        componentKey: String,
+        atStart: Boolean,
+        targetCellX: Int,
+        targetCellY: Int,
+    ): Boolean {
+        var moved = false
+        context.launcherDataStore.edit { prefs ->
+            val currentCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            if (currentCount >= MAX_HOME_PAGES) return@edit
+            val currentDock = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
+            if (!currentDock.remove(componentKey)) return@edit
+
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                currentCount,
+                cols,
+            )
+            val cx = targetCellX.coerceIn(0, cols - 1)
+            val cy = targetCellY.coerceIn(0, HomeGridEngine.HOME_GRID_ROWS - 1)
+            val newPageIdx = if (atStart) 0 else currentCount
+            val updatedW = if (atStart) normW.map { it.copy(pageIndex = it.pageIndex + 1) } else normW
+            val shiftedA = if (atStart) normA.map { it.copy(pageIndex = it.pageIndex + 1) } else normA
+            val updatedA = shiftedA + PlacedHomeApp(
+                componentKey = componentKey,
+                pageIndex = newPageIdx,
+                cellX = cx,
+                cellY = cy,
+            )
+            prefs[Keys.DOCK_KEYS] = encodeList(currentDock)
+            prefs[Keys.HOME_PAGE_COUNT] = currentCount + 1
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(updatedW)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedA)
+            moved = true
+        }
+        return moved
+    }
+
+    suspend fun moveHomeAppToDock(
+        componentKey: String,
+        fromPage: Int,
+        targetDockIndex: Int,
+    ) {
+        context.launcherDataStore.edit { prefs ->
+            val cols = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5)
+            val pageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES)
+            val (normW, normA) = normalizeAllPages(
+                decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
+                readHomeApps(prefs),
+                pageCount,
+                cols,
+            )
+            val sourceApp = normA.firstOrNull { it.pageIndex == fromPage && it.componentKey == componentKey }
+                ?: return@edit
+
+            val currentDock = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
+            val updatedApps = normA.filterNot { it.pageIndex == fromPage && it.componentKey == componentKey }.toMutableList()
+
+            val existingIdx = currentDock.indexOf(componentKey)
+            when {
+                existingIdx >= 0 -> {
+                    currentDock.removeAt(existingIdx)
+                    currentDock.add(targetDockIndex.coerceIn(0, currentDock.size), componentKey)
+                }
+
+                currentDock.size < MAX_DOCK_ITEMS -> {
+                    currentDock.add(targetDockIndex.coerceIn(0, currentDock.size), componentKey)
+                }
+
+                else -> {
+                    val swapIdx = targetDockIndex.coerceIn(0, currentDock.lastIndex)
+                    val displacedKey = currentDock[swapIdx]
+                    currentDock[swapIdx] = componentKey
+                    val dupOnFrom = updatedApps.any { it.pageIndex == fromPage && it.componentKey == displacedKey }
+                    if (!dupOnFrom) {
+                        updatedApps.add(
+                            PlacedHomeApp(
+                                componentKey = displacedKey,
+                                pageIndex = fromPage,
+                                cellX = sourceApp.cellX,
+                                cellY = sourceApp.cellY,
+                            )
+                        )
+                    }
+                }
+            }
+
+            prefs[Keys.DOCK_KEYS] = encodeList(currentDock)
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(updatedApps)
+            prefs[Keys.PLACED_WIDGETS] = encodePlacedWidgets(normW)
+        }
+    }
+
     suspend fun setAppGesture(
         appKey: String,
         direction: SwipeDirection,
@@ -543,6 +737,12 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
         context.launcherDataStore.edit { prefs ->
             prefs[key] = action.encode()
+        }
+    }
+
+    suspend fun setHomeButtonAction(action: HomeGestureAction) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.HOME_BUTTON_ACTION] = action.encode()
         }
     }
 
@@ -863,6 +1063,72 @@ class LauncherPreferencesRepository(private val context: Context) {
             }
         }
     }
+
+    suspend fun setSearchShortcutsEnabled(enabled: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SEARCH_SHORTCUTS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSearchContactsEnabled(enabled: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SEARCH_CONTACTS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSearchFilesEnabled(enabled: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SEARCH_FILES_ENABLED] = enabled
+        }
+    }
+
+    suspend fun addSearchFileTreeUri(treeUri: String, autoEnable: Boolean = true): Boolean {
+        var added = false
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeEncodedList(prefs[Keys.SEARCH_FILE_TREE_URIS]).toMutableList()
+            if (treeUri !in current) {
+                current.add(treeUri)
+                prefs[Keys.SEARCH_FILE_TREE_URIS] = encodeEncodedList(current)
+                added = true
+            }
+            if (autoEnable) {
+                prefs[Keys.SEARCH_FILES_ENABLED] = true
+            }
+        }
+        return added
+    }
+
+    suspend fun removeSearchFileTreeUri(treeUri: String) {
+        context.launcherDataStore.edit { prefs ->
+            val updated = decodeEncodedList(prefs[Keys.SEARCH_FILE_TREE_URIS]).filterNot { it == treeUri }
+            prefs[Keys.SEARCH_FILE_TREE_URIS] = encodeEncodedList(updated)
+            if (updated.isEmpty()) {
+                prefs[Keys.SEARCH_FILES_ENABLED] = false
+            }
+        }
+    }
+
+    suspend fun setSearchThirdPartyAppEnabled(packageName: String, enabled: Boolean) {
+        if (packageName.isBlank()) return
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).toMutableList()
+            if (enabled) {
+                if (packageName !in current) current.add(packageName)
+            } else {
+                current.remove(packageName)
+            }
+            prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES] = encodeEncodedList(current)
+        }
+    }
+
+    private fun encodeEncodedList(items: List<String>): String =
+        items.distinct().joinToString(PAGE_SEP) { Uri.encode(it) }
+
+    private fun decodeEncodedList(raw: String?): List<String> =
+        raw?.split(PAGE_SEP)
+            ?.mapNotNull { segment -> Uri.decode(segment).takeIf { it.isNotBlank() } }
+            ?.distinct()
+            ?: emptyList()
 
     private fun encodeList(items: List<String>): String =
         items.distinct().joinToString(ITEM_SEP)

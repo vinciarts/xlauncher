@@ -57,7 +57,8 @@
     <string name="grid_columns_option">%1$d cols</string>
     <string name="grid_rows_option">%1$d rows</string>
 
-    <string name="settings_home_gestures_section">Home gestures</string>
+    <string name="settings_home_gestures_section">Home gestures &amp; button</string>
+    <string name="settings_home_button_action">Home button on Home</string>
     <string name="home_gesture_picker_title">Action for %1$s</string>
     <string name="home_gesture_group_launcher">Launcher</string>
     <string name="home_gesture_group_system">System</string>
@@ -158,4 +159,42 @@
     <string name="widget_resize_height">Height (rows)</string>
     <string name="widget_add_error">Unable to add widget</string>
     <string name="widget_unavailable_label">Widget unavailable</string>
+
+    <!-- Universal Search & Sources -->
+    <string name="search_universal_placeholder">Search apps, contacts, files…</string>
+    <string name="empty_universal_search_hint">No matching results</string>
+    <string name="settings_search_section">Search sources</string>
+    <string name="settings_search_hint">Extra sources are off by default so search stays clean. Enable only what you need.</string>
+    <string name="settings_search_shortcuts">App shortcuts</string>
+    <string name="settings_search_shortcuts_desc">Search quick actions exposed by installed apps</string>
+    <string name="settings_search_shortcuts_need_default">Set as default home app to search shortcuts</string>
+    <string name="settings_search_contacts">Contacts</string>
+    <string name="settings_search_contacts_desc">Search contacts by name, pinyin, or phone number</string>
+    <string name="settings_search_contacts_denied">Contacts permission denied</string>
+    <string name="settings_search_files">Local files</string>
+    <string name="settings_search_files_empty">Select folders to index (zero broad storage permission)</string>
+    <string name="settings_search_files_summary">%1$d folders · %2$d files indexed</string>
+    <string name="settings_search_third_party_section">Third-party app search</string>
+    <string name="settings_search_third_party_section_hint">Turn on individual apps that expose system search to hand off queries from the drawer.</string>
+    <string name="settings_search_app_inapp_desc">In-app search</string>
+    <string name="settings_search_app_web_desc">Web search</string>
+    <string name="settings_search_third_party_none_installed">No installed apps expose search actions</string>
+
+    <string name="search_folders_dialog_title">Indexed folders</string>
+    <string name="search_folders_dialog_empty">No folders selected yet. Pick a folder (like Downloads or Documents) to make its files searchable.</string>
+    <string name="search_folders_add">Add folder</string>
+    <string name="search_folders_remove_cd">Remove folder</string>
+    <string name="search_folders_added_message">Folder added for search</string>
+    <string name="search_providers_placeholder">Filter apps…</string>
+
+    <string name="search_section_apps">Apps</string>
+    <string name="search_section_shortcuts">Shortcuts</string>
+    <string name="search_section_contacts">Contacts</string>
+    <string name="search_section_files">Files</string>
+    <string name="search_section_third_party">Search \"%1$s\" in apps</string>
+    <string name="search_in_app_subtitle">Search in %1$s</string>
+    <string name="cd_call_contact">Call contact</string>
+    <string name="search_open_contact_error">Unable to open contact</string>
+    <string name="search_open_file_error">No app available to open this file</string>
+    <string name="search_third_party_error">Unable to open search in this app</string>
 </resources>

@@ -57,7 +57,8 @@
     <string name="grid_columns_option">%1$d 列</string>
     <string name="grid_rows_option">%1$d 行</string>
 
-    <string name="settings_home_gestures_section">桌面手势</string>
+    <string name="settings_home_gestures_section">桌面手势与按键</string>
+    <string name="settings_home_button_action">在桌面按 Home 键</string>
     <string name="home_gesture_picker_title">选择 %1$s 触发的动作</string>
     <string name="home_gesture_group_launcher">桌面动作</string>
     <string name="home_gesture_group_system">系统动作</string>
@@ -158,4 +159,42 @@
     <string name="widget_resize_height">高度（行）</string>
     <string name="widget_add_error">无法添加该小组件</string>
     <string name="widget_unavailable_label">小组件不可用</string>
+
+    <!-- Universal Search & Sources -->
+    <string name="search_universal_placeholder">搜索应用、联系人、文件…</string>
+    <string name="empty_universal_search_hint">没有匹配结果</string>
+    <string name="settings_search_section">搜索来源</string>
+    <string name="settings_search_hint">额外搜索来源默认全部关闭，按需开启以保持搜索结果清爽。</string>
+    <string name="settings_search_shortcuts">应用快捷方式</string>
+    <string name="settings_search_shortcuts_desc">支持按名称或拼音搜索各应用开放的快捷动作</string>
+    <string name="settings_search_shortcuts_need_default">需设为默认桌面后才可搜索快捷方式</string>
+    <string name="settings_search_contacts">联系人</string>
+    <string name="settings_search_contacts_desc">支持姓名、拼音首字母和号码搜索联系人</string>
+    <string name="settings_search_contacts_denied">未授予通讯录权限</string>
+    <string name="settings_search_files">本地文件</string>
+    <string name="settings_search_files_empty">选择要索引的文件夹（无需申请全部存储权限）</string>
+    <string name="settings_search_files_summary">已授权 %1$d 个文件夹 · 索引 %2$d 个文件</string>
+    <string name="settings_search_third_party_section">第三方应用搜索</string>
+    <string name="settings_search_third_party_section_hint">以下应用开放了系统搜索入口，可按应用单独开关；开启后会在抽屉搜索底部显示直达入口。</string>
+    <string name="settings_search_app_inapp_desc">应用内搜索</string>
+    <string name="settings_search_app_web_desc">网页搜索</string>
+    <string name="settings_search_third_party_none_installed">未发现开放搜索入口的第三方应用</string>
+
+    <string name="search_folders_dialog_title">已索引文件夹</string>
+    <string name="search_folders_dialog_empty">暂未添加文件夹。选择常用目录（如 Download、Documents）后即可在抽屉中搜索文件名。</string>
+    <string name="search_folders_add">添加文件夹</string>
+    <string name="search_folders_remove_cd">移除文件夹</string>
+    <string name="search_folders_added_message">已添加搜索文件夹</string>
+    <string name="search_providers_placeholder">筛选应用…</string>
+
+    <string name="search_section_apps">应用</string>
+    <string name="search_section_shortcuts">快捷方式</string>
+    <string name="search_section_contacts">联系人</string>
+    <string name="search_section_files">本地文件</string>
+    <string name="search_section_third_party">在其他应用中搜索「%1$s」</string>
+    <string name="search_in_app_subtitle">在 %1$s 中搜索</string>
+    <string name="cd_call_contact">拨打电话</string>
+    <string name="search_open_contact_error">无法打开该联系人</string>
+    <string name="search_open_file_error">没有可打开此文件的应用</string>
+    <string name="search_third_party_error">无法调起该应用的搜索页面</string>
 </resources>

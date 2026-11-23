@@ -25,13 +25,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -54,9 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -73,13 +67,19 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.AppActionOrigin
 import com.example.model.AppItem
+import com.example.model.AppShortcutItem
+import com.example.model.ContactSearchResult
 import com.example.model.DrawerTab
 import com.example.model.DrawerTabPage
+import com.example.model.FileSearchResult
+import com.example.model.SearchProviderApp
 import com.example.ui.components.AppContextMenuDropdown
 import com.example.ui.components.AppContextMenuHost
 import com.example.ui.components.AppIconTile
 import com.example.ui.components.CreateDrawerTabDialog
+import com.example.ui.components.DrawerUniversalSearchResults
 import com.example.ui.components.EditDrawerTabDialog
+import com.example.ui.components.ExpressiveSearchField
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
@@ -93,6 +93,11 @@ fun AppDrawerScreen(
     drawerTabs: ImmutableList<DrawerTab>,
     drawerTabPages: ImmutableList<DrawerTabPage>,
     filteredDrawerApps: ImmutableList<AppItem>,
+    hasAnyExtraSearchEnabled: Boolean,
+    matchedShortcuts: ImmutableList<AppShortcutItem>,
+    matchedContacts: ImmutableList<ContactSearchResult>,
+    matchedFiles: ImmutableList<FileSearchResult>,
+    activeSearchProviders: ImmutableList<SearchProviderApp>,
     drawerSearchQuery: String,
     autoFocusDrawerSearch: Boolean,
     drawerColumns: Int,
@@ -100,6 +105,11 @@ fun AppDrawerScreen(
     onSearchQueryChange: (String) -> Unit,
     onAutoFocusConsumed: () -> Unit,
     onAppClick: (AppItem) -> Unit,
+    onLaunchShortcut: (AppShortcutItem) -> Unit,
+    onOpenContact: (ContactSearchResult) -> Unit,
+    onDialContact: (String) -> Unit,
+    onOpenFile: (FileSearchResult) -> Unit,
+    onLaunchThirdPartySearch: (SearchProviderApp, String) -> Unit,
     appMenuHost: AppContextMenuHost,
     onCreateTab: (String, List<String>) -> Unit,
     onRenameTab: (String, String) -> Unit,
@@ -288,95 +298,41 @@ fun AppDrawerScreen(
                             )
                         },
                 ) {
-                    // Native Material 3 pill search bar
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
-                            .height(48.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 16.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Box(modifier = Modifier.weight(1f)) {
-                                if (drawerSearchQuery.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.search_apps_placeholder),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                BasicTextField(
-                                    value = drawerSearchQuery,
-                                    onValueChange = onSearchQueryChange,
-                                    enabled = isActive,
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    ),
-                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .focusRequester(focusRequester)
-                                        .testTag("drawer_search_input"),
-                                )
-                            }
-                            if (drawerSearchQuery.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { onSearchQueryChange("") },
-                                    modifier = Modifier.size(32.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.cd_clear_search),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    ExpressiveSearchField(
+                        query = drawerSearchQuery,
+                        onQueryChange = onSearchQueryChange,
+                        placeholder = stringResource(
+                            if (hasAnyExtraSearchEnabled) R.string.search_universal_placeholder
+                            else R.string.search_apps_placeholder
+                        ),
+                        enabled = isActive,
+                        focusRequester = focusRequester,
+                        inputTestTag = "drawer_search_input",
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                    )
                 }
 
                 if (drawerSearchQuery.isNotBlank()) {
-                    if (filteredDrawerApps.isEmpty()) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.empty_search_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        DrawerAppsVerticalGrid(
-                            apps = filteredDrawerApps,
-                            cols = drawerColumns,
-                            tabIndex = -1,
-                            isCurrentPage = true,
-                            onAppClick = onAppClick,
-                            appMenuHost = appMenuHost,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                        )
-                    }
+                    DrawerUniversalSearchResults(
+                        query = drawerSearchQuery,
+                        cols = drawerColumns,
+                        hasAnyExtraSearchEnabled = hasAnyExtraSearchEnabled,
+                        apps = filteredDrawerApps,
+                        shortcuts = matchedShortcuts,
+                        contacts = matchedContacts,
+                        files = matchedFiles,
+                        searchProviders = activeSearchProviders,
+                        appMenuHost = appMenuHost,
+                        onAppClick = onAppClick,
+                        onLaunchShortcut = onLaunchShortcut,
+                        onOpenContact = onOpenContact,
+                        onDialContact = onDialContact,
+                        onOpenFile = onOpenFile,
+                        onLaunchThirdPartySearch = onLaunchThirdPartySearch,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
                 } else {
                     HorizontalPager(
                         state = pagerState,
@@ -431,74 +387,79 @@ fun AppDrawerScreen(
 
                     // Bottom native Material 3 Scrollable TabRow + quick Edit / Add tab buttons
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 8.dp, end = 4.dp),
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        PrimaryScrollableTabRow(
-                            selectedTabIndex = currentPageIndex,
-                            edgePadding = 8.dp,
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            divider = {},
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .weight(1f)
-                                .testTag("drawer_tab_row"),
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, end = 4.dp),
                         ) {
-                            pages.forEachIndexed { index, tabPage ->
-                                val title = if (tabPage.isAllTab) {
-                                    stringResource(R.string.drawer_tab_all)
-                                } else {
-                                    tabPage.name
-                                }
-                                Tab(
-                                    selected = currentPageIndex == index,
-                                    onClick = {
-                                        if (loopEnabled && index != currentPageIndex) {
-                                            scope.launch {
-                                                pagerState.animateScrollToPage(
-                                                    pagerState.currentPage + (index - currentPageIndex)
-                                                )
+                            PrimaryScrollableTabRow(
+                                selectedTabIndex = currentPageIndex,
+                                edgePadding = 8.dp,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                divider = {},
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("drawer_tab_row"),
+                            ) {
+                                pages.forEachIndexed { index, tabPage ->
+                                    val title = if (tabPage.isAllTab) {
+                                        stringResource(R.string.drawer_tab_all)
+                                    } else {
+                                        tabPage.name
+                                    }
+                                    Tab(
+                                        selected = currentPageIndex == index,
+                                        onClick = {
+                                            if (loopEnabled && index != currentPageIndex) {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        pagerState.currentPage + (index - currentPageIndex)
+                                                    )
+                                                }
                                             }
-                                        }
-                                    },
-                                    text = {
-                                        Text(
-                                            text = title,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    },
-                                    modifier = Modifier.testTag("drawer_tab_${tabPage.id}"),
-                                )
+                                        },
+                                        text = {
+                                            Text(
+                                                text = title,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("drawer_tab_${tabPage.id}"),
+                                    )
+                                }
                             }
-                        }
 
-                        if (!currentTabPage.isAllTab) {
+                            if (!currentTabPage.isAllTab) {
+                                IconButton(
+                                    onClick = { editingTabId = currentTabPage.id },
+                                    modifier = Modifier.testTag("drawer_edit_tab_button"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Edit,
+                                        contentDescription = stringResource(R.string.cd_edit_drawer_tab),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+
                             IconButton(
-                                onClick = { editingTabId = currentTabPage.id },
-                                modifier = Modifier.testTag("drawer_edit_tab_button"),
+                                onClick = { showCreateTabDialog = true },
+                                modifier = Modifier.testTag("drawer_add_tab_button"),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Edit,
-                                    contentDescription = stringResource(R.string.cd_edit_drawer_tab),
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = stringResource(R.string.cd_add_drawer_tab),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(22.dp),
                                 )
                             }
-                        }
-
-                        IconButton(
-                            onClick = { showCreateTabDialog = true },
-                            modifier = Modifier.testTag("drawer_add_tab_button"),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = stringResource(R.string.cd_add_drawer_tab),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp),
-                            )
                         }
                     }
                 }

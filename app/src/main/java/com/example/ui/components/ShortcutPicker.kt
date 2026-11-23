@@ -2,11 +2,9 @@ package com.example.ui.components
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,20 +12,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.AppShortcutItem
+import com.example.search.PinyinSearchEngine
 
 @Composable
 fun ShortcutIconImage(
@@ -51,7 +55,9 @@ fun ShortcutIconImage(
                 bitmap = shortcut.icon,
                 contentDescription = shortcut.displayLabel,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp)),
             )
         } else {
             Box(
@@ -71,6 +77,7 @@ fun ShortcutIconImage(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ShortcutPickerContent(
     allShortcuts: List<AppShortcutItem>,
@@ -82,9 +89,11 @@ fun ShortcutPickerContent(
     onOpenDefaultHomeSettings: () -> Unit,
 ) {
     if (!hasShortcutHostPermission) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        Card(
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
@@ -111,8 +120,7 @@ fun ShortcutPickerContent(
             allShortcuts
         } else {
             allShortcuts.filter {
-                it.label.contains(q, ignoreCase = true) ||
-                    it.appLabel.contains(q, ignoreCase = true) ||
+                PinyinSearchEngine.matches(q, it.label, it.appLabel) ||
                     it.packageName.contains(q, ignoreCase = true)
             }
         }
@@ -139,46 +147,54 @@ fun ShortcutPickerContent(
         return
     }
 
+    val segmentedColors = ListItemDefaults.segmentedColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    )
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 360.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
     ) {
-        items(items = filtered, key = { it.targetKey }) { shortcut ->
+        itemsIndexed(
+            items = filtered,
+            key = { _, shortcut -> shortcut.targetKey },
+        ) { index, shortcut ->
             val selected = selectedTargetKey == shortcut.targetKey
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.secondaryContainer
-                        else Color.Transparent
-                    )
-                    .clickable { onSelectShortcut(shortcut) }
-                    .padding(horizontal = 10.dp, vertical = 9.dp),
-            ) {
-                ShortcutIconImage(shortcut = shortcut, size = 34.dp)
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = shortcut.label,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                        else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            SegmentedListItem(
+                selected = selected,
+                onClick = { onSelectShortcut(shortcut) },
+                shapes = ListItemDefaults.segmentedShapes(index = index, count = filtered.size),
+                colors = segmentedColors,
+                leadingContent = {
+                    ShortcutIconImage(shortcut = shortcut, size = 32.dp)
+                },
+                supportingContent = {
                     Text(
                         text = shortcut.appLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                }
-            }
+                },
+                trailingContent = if (selected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                        )
+                    }
+                } else {
+                    null
+                },
+                content = {
+                    Text(
+                        text = shortcut.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
         }
     }
 }

@@ -1,47 +1,60 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.data.AppRepository
 import com.example.data.LauncherPreferencesRepository
+import com.example.data.UniversalSearchRepository
 import com.example.model.AppActionOrigin
 import com.example.model.AppItem
 import com.example.model.AppMenuTarget
 import com.example.model.AppShortcutItem
+import com.example.model.ContactSearchResult
 import com.example.model.DrawerTab
 import com.example.model.DrawerTabPage
+import com.example.model.FileSearchResult
 import com.example.model.HomeAppSlot
 import com.example.model.HomeGestureAction
 import com.example.model.HomeGridEngine
 import com.example.model.HomePageCommand
 import com.example.model.HomePageCommandType
+import com.example.model.IndexedFolderInfo
 import com.example.model.LauncherDestination
 import com.example.model.LauncherSettings
 import com.example.model.LauncherUiState
 import com.example.model.PlacedWidget
+import com.example.model.SearchProviderApp
 import com.example.model.SwipeDirection
+import com.example.search.PinyinSearchEngine
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appRepository = AppRepository(application)
     private val prefsRepository = LauncherPreferencesRepository(application)
+    private val searchRepository = UniversalSearchRepository(application)
 
     private val installedApps = MutableStateFlow<List<AppItem>>(emptyList())
     private val isLoadingApps = MutableStateFlow(true)
@@ -64,8 +77,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val homePageCommand = MutableStateFlow<HomePageCommand?>(null)
     private var nextPageCommandId = 0
     private val snackbarMessage = MutableStateFlow<String?>(null)
+    private val cachedContacts = MutableStateFlow<List<ContactSearchResult>>(emptyList())
+    private val cachedFiles = MutableStateFlow<List<FileSearchResult>>(emptyList())
+    private val indexedFolders = MutableStateFlow<List<IndexedFolderInfo>>(emptyList())
+    private val availableSearchProviders = MutableStateFlow<List<SearchProviderApp>>(emptyList())
     private var appMenuShortcutsJob: Job? = null
     private var bulkShortcutsJob: Job? = null
+    private var contactsLoadJob: Job? = null
+    private var filesIndexJob: Job? = null
 
     private data class NavState(
         val destination: LauncherDestination,
@@ -237,19 +256,75 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
+    private data class SearchCacheState(
+        val contacts: List<ContactSearchResult>,
+        val files: List<FileSearchResult>,
+        val folders: List<IndexedFolderInfo>,
+        val providers: List<SearchProviderApp>,
+    )
+
+    private val searchCacheFlow = combine(
+        cachedContacts,
+        cachedFiles,
+        indexedFolders,
+        availableSearchProviders,
+    ) { contacts, files, folders, providers ->
+        SearchCacheState(contacts, files, folders, providers)
+    }
+
     val uiState: StateFlow<LauncherUiState> = combine(
         derivedLayoutFlow,
         navFlow,
         overlayFlow,
-    ) { layout, nav, overlay ->
+        searchCacheFlow,
+    ) { layout, nav, overlay, searchCache ->
         val trimmed = nav.searchQuery.trim()
+        val settings = layout.settings
+
         val filteredDrawerApps = if (trimmed.isEmpty()) {
             layout.allApps
         } else {
-            layout.allApps.filter { app ->
-                app.label.contains(trimmed, ignoreCase = true) ||
-                    app.packageName.contains(trimmed, ignoreCase = true)
-            }.toImmutableList()
+            layout.allApps.mapNotNull { app ->
+                val score = PinyinSearchEngine.matchScore(trimmed, app.label, app.packageName)
+                if (score != PinyinSearchEngine.NO_MATCH) score to app else null
+            }
+                .sortedBy { it.first }
+                .map { it.second }
+                .toImmutableList()
+        }
+
+        val matchedShortcuts = if (trimmed.isNotEmpty() && settings.searchShortcutsEnabled) {
+            layout.allShortcuts.mapNotNull { shortcut ->
+                val score = PinyinSearchEngine.matchScore(trimmed, shortcut.label, shortcut.appLabel)
+                if (score != PinyinSearchEngine.NO_MATCH) score to shortcut else null
+            }
+                .sortedWith(compareBy<Pair<Int, AppShortcutItem>> { it.first }.thenBy { it.second.rank })
+                .take(6)
+                .map { it.second }
+                .toImmutableList()
+        } else {
+            persistentListOf()
+        }
+
+        val matchedContacts = if (trimmed.isNotEmpty() && settings.searchContactsEnabled) {
+            searchRepository.searchContacts(trimmed, searchCache.contacts, limit = 6).toImmutableList()
+        } else {
+            persistentListOf()
+        }
+
+        val matchedFiles = if (trimmed.isNotEmpty() && settings.searchFilesEnabled) {
+            searchRepository.searchFiles(trimmed, searchCache.files, limit = 8).toImmutableList()
+        } else {
+            persistentListOf()
+        }
+
+        val activeSearchProviders = if (trimmed.isNotEmpty() && settings.searchThirdPartyPackages.isNotEmpty()) {
+            val allowed = settings.searchThirdPartyPackages.toSet()
+            searchCache.providers
+                .filter { it.packageName in allowed }
+                .toImmutableList()
+        } else {
+            persistentListOf()
         }
 
         LauncherUiState(
@@ -264,9 +339,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             dockApps = layout.dockApps,
             drawerTabPages = layout.drawerTabPages,
             filteredDrawerApps = filteredDrawerApps,
-            settings = layout.settings,
+            matchedShortcuts = matchedShortcuts,
+            matchedContacts = matchedContacts,
+            matchedFiles = matchedFiles,
+            availableSearchProviders = searchCache.providers.toImmutableList(),
+            activeSearchProviders = activeSearchProviders,
+            indexedFolders = searchCache.folders.toImmutableList(),
+            indexedFileCount = searchCache.files.size,
+            settings = settings,
             destination = nav.destination,
-            currentHomePage = nav.homePage.coerceIn(0, (layout.settings.homePageCount - 1).coerceAtLeast(0)),
+            currentHomePage = nav.homePage.coerceIn(0, (settings.homePageCount - 1).coerceAtLeast(0)),
             drawerSearchQuery = nav.searchQuery,
             autoFocusDrawerSearch = nav.autoFocusSearch,
             isDefaultLauncher = nav.isDefault,
@@ -292,8 +374,62 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         appRepository.registerShortcutsChangedCallback { _ ->
             reloadAllShortcuts()
         }
+        observeSearchSourceSettings()
         refreshInstalledApps()
         refreshDefaultLauncherStatus()
+    }
+
+    private fun observeSearchSourceSettings() {
+        viewModelScope.launch {
+            prefsRepository.settingsFlow
+                .map { it.searchContactsEnabled }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    if (enabled) {
+                        if (searchRepository.hasContactsPermission()) {
+                            reloadContactsCache()
+                        } else {
+                            cachedContacts.value = emptyList()
+                            prefsRepository.setSearchContactsEnabled(false)
+                        }
+                    } else {
+                        contactsLoadJob?.cancel()
+                        cachedContacts.value = emptyList()
+                    }
+                }
+        }
+
+        viewModelScope.launch {
+            prefsRepository.settingsFlow
+                .map { it.searchFileTreeUris }
+                .distinctUntilChanged()
+                .collect { uris ->
+                    indexedFolders.value = searchRepository.resolveIndexedFolders(uris)
+                }
+        }
+
+        viewModelScope.launch {
+            prefsRepository.settingsFlow
+                .map { it.searchFilesEnabled to it.searchFileTreeUris }
+                .distinctUntilChanged()
+                .collect { (enabled, uris) ->
+                    filesIndexJob?.cancel()
+                    if (enabled && uris.isNotEmpty()) {
+                        filesIndexJob = viewModelScope.launch {
+                            cachedFiles.value = searchRepository.indexFileTrees(uris)
+                        }
+                    } else {
+                        cachedFiles.value = emptyList()
+                    }
+                }
+        }
+    }
+
+    private fun reloadContactsCache() {
+        contactsLoadJob?.cancel()
+        contactsLoadJob = viewModelScope.launch {
+            cachedContacts.value = searchRepository.loadContactsIfPermitted()
+        }
     }
 
     override fun onCleared() {
@@ -309,6 +445,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val apps = appRepository.loadInstalledApps()
             installedApps.value = apps
             isLoadingApps.value = false
+
+            launch(Dispatchers.Default) {
+                PinyinSearchEngine.prewarm(apps.map { it.label })
+            }
+            launch {
+                availableSearchProviders.value = searchRepository.loadThirdPartySearchProviders()
+            }
 
             val canHost = appRepository.hasShortcutHostPermission()
             hasShortcutPermission.value = canHost
@@ -347,7 +490,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         bulkShortcutsJob = viewModelScope.launch {
             val canHost = appRepository.hasShortcutHostPermission()
             hasShortcutPermission.value = canHost
-            appShortcuts.value = if (canHost) appRepository.loadAppShortcuts(apps) else emptyList()
+            val loaded = if (canHost) appRepository.loadAppShortcuts(apps) else emptyList()
+            appShortcuts.value = loaded
+            if (loaded.isNotEmpty()) {
+                withContext(Dispatchers.Default) {
+                    PinyinSearchEngine.prewarm(loaded.map { it.label })
+                }
+            }
         }
     }
 
@@ -373,6 +522,25 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         resizingWidgetId.value = null
         refreshDefaultLauncherStatus()
         destination.value = LauncherDestination.SETTINGS
+    }
+
+    fun handleHomeButton(alreadyInForeground: Boolean) {
+        val isCleanHome = alreadyInForeground &&
+            destination.value == LauncherDestination.HOME &&
+            appMenuTarget.value == null &&
+            gestureConfigApp.value == null &&
+            movePageTarget.value == null &&
+            appTabsTarget.value == null &&
+            homeEmptyMenuAnchor.value == null &&
+            widgetMenuId.value == null &&
+            resizingWidgetId.value == null &&
+            moveWidgetTarget.value == null
+
+        if (isCleanHome) {
+            executeHomeAction(uiState.value.settings.homeButtonAction)
+        } else {
+            returnHome(resetToFirstPage = false)
+        }
     }
 
     fun returnHome(resetToFirstPage: Boolean = false) {
@@ -515,9 +683,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setHomeButtonAction(action: HomeGestureAction) {
+        viewModelScope.launch {
+            prefsRepository.setHomeButtonAction(action)
+        }
+    }
+
     fun onHomeSwiped(direction: SwipeDirection) {
+        val action = uiState.value.settings.homeGestures[direction] ?: HomeGestureAction.None
+        executeHomeAction(action)
+    }
+
+    private fun executeHomeAction(action: HomeGestureAction) {
         val state = uiState.value
-        val action = state.settings.homeGestures[direction] ?: HomeGestureAction.None
         when (action) {
             HomeGestureAction.None -> Unit
             HomeGestureAction.OpenDrawer -> openDrawer(focusSearch = false)
@@ -662,6 +840,73 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     LauncherPreferencesRepository.MAX_HOME_PAGES,
                 )
             }
+        }
+    }
+
+    fun reorderDockApp(componentKey: String, targetIndex: Int) {
+        viewModelScope.launch {
+            prefsRepository.reorderDockApp(componentKey, targetIndex)
+        }
+    }
+
+    fun moveDockAppToHomeCell(
+        componentKey: String,
+        targetPage: Int,
+        targetCellX: Int,
+        targetCellY: Int,
+    ) {
+        viewModelScope.launch {
+            prefsRepository.moveDockAppToHomeCell(
+                componentKey = componentKey,
+                targetPage = targetPage,
+                targetCellX = targetCellX,
+                targetCellY = targetCellY,
+            )
+        }
+    }
+
+    fun moveDockAppToNewPage(
+        componentKey: String,
+        atStart: Boolean,
+        targetCellX: Int,
+        targetCellY: Int,
+    ) {
+        val currentCount = uiState.value.settings.homePageCount
+        if (currentCount >= LauncherPreferencesRepository.MAX_HOME_PAGES) {
+            snackbarMessage.value = getApplication<Application>().getString(
+                R.string.home_pages_limit_message,
+                LauncherPreferencesRepository.MAX_HOME_PAGES,
+            )
+            return
+        }
+        currentHomePage.value = if (atStart) 0 else currentCount
+        viewModelScope.launch {
+            val moved = prefsRepository.insertHomePageAndMoveDockApp(
+                componentKey = componentKey,
+                atStart = atStart,
+                targetCellX = targetCellX,
+                targetCellY = targetCellY,
+            )
+            if (!moved) {
+                snackbarMessage.value = getApplication<Application>().getString(
+                    R.string.home_pages_limit_message,
+                    LauncherPreferencesRepository.MAX_HOME_PAGES,
+                )
+            }
+        }
+    }
+
+    fun moveHomeAppToDock(
+        componentKey: String,
+        fromPage: Int,
+        targetDockIndex: Int,
+    ) {
+        viewModelScope.launch {
+            prefsRepository.moveHomeAppToDock(
+                componentKey = componentKey,
+                fromPage = fromPage,
+                targetDockIndex = targetDockIndex,
+            )
         }
     }
 
@@ -981,6 +1226,126 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun pruneMissingWidgets(validIds: Set<Int>) {
         viewModelScope.launch {
             prefsRepository.pruneMissingWidgets(validIds)
+        }
+    }
+
+    fun hasContactsPermission(): Boolean = searchRepository.hasContactsPermission()
+
+    fun refreshSearchSourcesIfEnabled() {
+        val settings = uiState.value.settings
+        if (settings.searchContactsEnabled) {
+            if (searchRepository.hasContactsPermission()) {
+                reloadContactsCache()
+            } else {
+                cachedContacts.value = emptyList()
+                viewModelScope.launch { prefsRepository.setSearchContactsEnabled(false) }
+            }
+        }
+    }
+
+    fun setSearchShortcutsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setSearchShortcutsEnabled(enabled)
+        }
+    }
+
+    fun setSearchContactsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled && !searchRepository.hasContactsPermission()) {
+                snackbarMessage.value = getApplication<Application>().getString(R.string.settings_search_contacts_denied)
+                prefsRepository.setSearchContactsEnabled(false)
+                return@launch
+            }
+            prefsRepository.setSearchContactsEnabled(enabled)
+        }
+    }
+
+    fun onContactsPermissionDenied() {
+        snackbarMessage.value = getApplication<Application>().getString(R.string.settings_search_contacts_denied)
+        viewModelScope.launch {
+            prefsRepository.setSearchContactsEnabled(false)
+        }
+    }
+
+    fun setSearchFilesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setSearchFilesEnabled(enabled)
+        }
+    }
+
+    fun addSearchFileFolder(treeUri: Uri) {
+        val resolver = getApplication<Application>().contentResolver
+        runCatching {
+            resolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        viewModelScope.launch {
+            val added = prefsRepository.addSearchFileTreeUri(treeUri.toString(), autoEnable = true)
+            if (added) {
+                snackbarMessage.value = getApplication<Application>().getString(R.string.search_folders_added_message)
+            }
+        }
+    }
+
+    fun removeSearchFileFolder(uriString: String) {
+        val resolver = getApplication<Application>().contentResolver
+        runCatching {
+            resolver.releasePersistableUriPermission(
+                Uri.parse(uriString),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        viewModelScope.launch {
+            prefsRepository.removeSearchFileTreeUri(uriString)
+        }
+    }
+
+    fun setSearchThirdPartyAppEnabled(packageName: String, enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setSearchThirdPartyAppEnabled(packageName, enabled)
+        }
+    }
+
+    fun openContact(contact: ContactSearchResult) {
+        val ok = searchRepository.openContact(contact)
+        if (ok) {
+            if (destination.value == LauncherDestination.DRAWER) {
+                returnHome()
+            }
+        } else {
+            snackbarMessage.value = getApplication<Application>().getString(R.string.search_open_contact_error)
+        }
+    }
+
+    fun dialContact(phoneNumber: String) {
+        val ok = searchRepository.dialContact(phoneNumber)
+        if (ok) {
+            if (destination.value == LauncherDestination.DRAWER) {
+                returnHome()
+            }
+        } else {
+            snackbarMessage.value = getApplication<Application>().getString(R.string.search_open_contact_error)
+        }
+    }
+
+    fun openFile(file: FileSearchResult) {
+        val ok = searchRepository.openFile(file)
+        if (ok) {
+            if (destination.value == LauncherDestination.DRAWER) {
+                returnHome()
+            }
+        } else {
+            snackbarMessage.value = getApplication<Application>().getString(R.string.search_open_file_error)
+        }
+    }
+
+    fun launchThirdPartySearch(provider: SearchProviderApp, query: String) {
+        val ok = searchRepository.launchThirdPartySearch(provider, query)
+        if (ok) {
+            if (destination.value == LauncherDestination.DRAWER) {
+                returnHome()
+            }
+        } else {
+            snackbarMessage.value = getApplication<Application>().getString(R.string.search_third_party_error)
         }
     }
 
