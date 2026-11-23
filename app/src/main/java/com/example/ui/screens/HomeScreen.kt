@@ -94,6 +94,10 @@ import com.example.ui.components.WidgetContextMenuDropdown
 import com.example.ui.components.WidgetContextMenuHost
 import com.example.ui.components.WidgetResizeFrameOverlay
 import com.example.widget.WidgetHostController
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -159,11 +163,11 @@ private const val DRAG_NEW_FRONT_PAGE = -1
 @Composable
 fun HomeScreen(
     isLoading: Boolean,
-    homePageApps: List<List<HomeAppSlot>>,
-    homePageWidgets: List<List<PlacedWidget>>,
-    dockApps: List<AppItem>,
-    appGestures: Map<String, Map<SwipeDirection, String>>,
-    homeGestures: Map<SwipeDirection, HomeGestureAction>,
+    homePageApps: ImmutableList<ImmutableList<HomeAppSlot>>,
+    homePageWidgets: ImmutableList<ImmutableList<PlacedWidget>>,
+    dockApps: ImmutableList<AppItem>,
+    appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
+    homeGestures: ImmutableMap<SwipeDirection, HomeGestureAction>,
     homeGridColumns: Int,
     homeLoopPaging: Boolean,
     maxHomePages: Int,
@@ -741,8 +745,8 @@ fun HomeScreen(
                                 .testTag("home_pager"),
                         ) { virtualPage ->
                             val realPage = ((virtualPage % pageCount) + pageCount) % pageCount
-                            val pageApps = homePageApps.getOrElse(realPage) { emptyList() }
-                            val pageWidgets = homePageWidgets.getOrElse(realPage) { emptyList() }
+                            val pageApps = homePageApps.getOrElse(realPage) { persistentListOf() }
+                            val pageWidgets = homePageWidgets.getOrElse(realPage) { persistentListOf() }
 
                             // In an infinite-loop pager (for ANY pageCount >= 2), multiple virtual pages can share the same
                             // realPage simultaneously (during swipes, beyondViewport preloading, or drags).
@@ -863,7 +867,7 @@ fun HomeScreen(
                 ) {
                     dockApps.forEach { app ->
                         key(app.componentKey) {
-                            val boundDirs = appGestures[app.componentKey]?.keys ?: emptySet()
+                            val boundDirs = appGestures[app.componentKey]?.keys ?: persistentSetOf()
                             Box(modifier = Modifier.weight(1f)) {
                                 AppIconTile(
                                     app = app,
@@ -1187,15 +1191,15 @@ private fun HomePageIndicatorBar(
 private fun HomePageContent(
     isLoading: Boolean,
     realPage: Int,
-    pageApps: List<HomeAppSlot>,
-    pageWidgets: List<PlacedWidget>,
+    pageApps: ImmutableList<HomeAppSlot>,
+    pageWidgets: ImmutableList<PlacedWidget>,
     isPreferredWidgetSlot: Boolean,
     isCurrentVirtualPage: Boolean,
     resizingWidgetId: Int?,
     draggedAppKey: String?,
     draggedWidgetId: Int?,
     cols: Int,
-    appGestures: Map<String, Map<SwipeDirection, String>>,
+    appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
     widgetHostController: WidgetHostController,
     appMenuHost: AppContextMenuHost,
     widgetMenuHost: WidgetContextMenuHost,
@@ -1310,7 +1314,7 @@ private fun HomePageContent(
                             val leftPx = (cx * colStepPx).roundToInt()
                             val topPx = (cy * rowStepPx).roundToInt()
                             val widthDp = with(density) { cellWidthPx.toDp() }
-                            val boundDirs = appGestures[slot.app.componentKey]?.keys ?: emptySet()
+                            val boundDirs = appGestures[slot.app.componentKey]?.keys ?: persistentSetOf()
                             val isBeingDragged = draggedAppKey == slot.app.componentKey
                             var isPointerHeld by remember { mutableStateOf(false) }
 

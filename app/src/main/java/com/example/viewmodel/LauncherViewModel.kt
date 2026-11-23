@@ -23,6 +23,11 @@ import com.example.model.LauncherSettings
 import com.example.model.LauncherUiState
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -162,15 +167,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private data class DerivedLayoutState(
         val isLoading: Boolean,
-        val allApps: List<AppItem>,
-        val appsByKey: Map<String, AppItem>,
+        val allApps: ImmutableList<AppItem>,
+        val appsByKey: ImmutableMap<String, AppItem>,
         val hasShortcutHostPermission: Boolean,
-        val allShortcuts: List<AppShortcutItem>,
-        val shortcutsByTargetKey: Map<String, AppShortcutItem>,
-        val homePageApps: List<List<HomeAppSlot>>,
-        val homePageWidgets: List<List<PlacedWidget>>,
-        val dockApps: List<AppItem>,
-        val drawerTabPages: List<DrawerTabPage>,
+        val allShortcuts: ImmutableList<AppShortcutItem>,
+        val shortcutsByTargetKey: ImmutableMap<String, AppShortcutItem>,
+        val homePageApps: ImmutableList<ImmutableList<HomeAppSlot>>,
+        val homePageWidgets: ImmutableList<ImmutableList<PlacedWidget>>,
+        val dockApps: ImmutableList<AppItem>,
+        val drawerTabPages: ImmutableList<DrawerTabPage>,
         val settings: LauncherSettings,
     )
 
@@ -178,16 +183,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         catalogFlow,
         prefsRepository.settingsFlow,
     ) { catalog, settings ->
-        val apps = catalog.apps
-        val appsByKey = apps.associateBy { it.componentKey }
-        val shortcutsByKey = catalog.shortcuts.associateBy { it.targetKey }
+        val apps = catalog.apps.toImmutableList()
+        val appsByKey = apps.associateBy { it.componentKey }.toImmutableMap()
+        val shortcuts = catalog.shortcuts.toImmutableList()
+        val shortcutsByKey = shortcuts.associateBy { it.targetKey }.toImmutableMap()
 
         val dockApps = settings.dockKeys
             .mapNotNull { appsByKey[it] }
             .take(LauncherPreferencesRepository.MAX_DOCK_ITEMS)
+            .toImmutableList()
 
-        val homePageApps = ArrayList<List<HomeAppSlot>>(settings.homePageCount)
-        val homePageWidgets = ArrayList<List<PlacedWidget>>(settings.homePageCount)
+        val homePageApps = ArrayList<ImmutableList<HomeAppSlot>>(settings.homePageCount)
+        val homePageWidgets = ArrayList<ImmutableList<PlacedWidget>>(settings.homePageCount)
         for (pageIdx in 0 until settings.homePageCount) {
             val rawPageWidgets = settings.placedWidgets.filter { it.pageIndex == pageIdx }
             val rawPageApps = settings.placedHomeApps.filter {
@@ -198,7 +205,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 apps = rawPageApps,
                 cols = settings.homeGridColumns,
             )
-            homePageWidgets.add(normW)
+            homePageWidgets.add(normW.toImmutableList())
             homePageApps.add(
                 normA.mapNotNull { placed ->
                     appsByKey[placed.componentKey]?.let { app ->
@@ -209,7 +216,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                             cellY = placed.cellY,
                         )
                     }
-                }
+                }.toImmutableList()
             )
         }
 
@@ -220,10 +227,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             allApps = apps,
             appsByKey = appsByKey,
             hasShortcutHostPermission = catalog.hasShortcutPermission,
-            allShortcuts = catalog.shortcuts,
+            allShortcuts = shortcuts,
             shortcutsByTargetKey = shortcutsByKey,
-            homePageApps = homePageApps,
-            homePageWidgets = homePageWidgets,
+            homePageApps = homePageApps.toImmutableList(),
+            homePageWidgets = homePageWidgets.toImmutableList(),
             dockApps = dockApps,
             drawerTabPages = drawerTabPages,
             settings = settings,
@@ -242,7 +249,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             layout.allApps.filter { app ->
                 app.label.contains(trimmed, ignoreCase = true) ||
                     app.packageName.contains(trimmed, ignoreCase = true)
-            }
+            }.toImmutableList()
         }
 
         LauncherUiState(
@@ -413,7 +420,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 app = app,
                 origin = origin,
                 sourcePageIndex = sourcePageIndex,
-                shortcuts = emptyList(),
+                shortcuts = persistentListOf(),
             )
             return
         }
@@ -421,6 +428,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val cached = appShortcuts.value
             .filter { it.packageName == app.packageName && it.isMenuShortcut }
             .sortedBy { it.rank }
+            .toImmutableList()
 
         if (cached.isNotEmpty()) {
             appMenuTarget.value = AppMenuTarget(
@@ -430,7 +438,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 shortcuts = cached,
             )
             appMenuShortcutsJob = viewModelScope.launch {
-                val fresh = appRepository.loadShortcutsForApp(app)
+                val fresh = appRepository.loadShortcutsForApp(app).toImmutableList()
                 val current = appMenuTarget.value
                 if (current != null &&
                     current.app.componentKey == app.componentKey &&
@@ -445,7 +453,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             appMenuShortcutsJob = viewModelScope.launch {
                 val fresh = withTimeoutOrNull(120L) {
                     appRepository.loadShortcutsForApp(app)
-                }.orEmpty()
+                }.orEmpty().toImmutableList()
                 appMenuTarget.value = AppMenuTarget(
                     app = app,
                     origin = origin,
@@ -984,7 +992,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         snackbarMessage.value = null
     }
 
-    private fun buildDrawerTabPages(apps: List<AppItem>, settings: LauncherSettings): List<DrawerTabPage> {
+    private fun buildDrawerTabPages(
+        apps: ImmutableList<AppItem>,
+        settings: LauncherSettings,
+    ): ImmutableList<DrawerTabPage> {
         val result = ArrayList<DrawerTabPage>(settings.drawerTabs.size + 1)
         if (!settings.isAllTabHidden) {
             result.add(
@@ -1004,7 +1015,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     id = tab.id,
                     name = tab.name,
                     isAllTab = false,
-                    apps = if (keySet.isEmpty()) emptyList() else apps.filter { it.componentKey in keySet },
+                    apps = if (keySet.isEmpty()) {
+                        persistentListOf()
+                    } else {
+                        apps.filter { it.componentKey in keySet }.toImmutableList()
+                    },
                 )
             )
         }
@@ -1018,7 +1033,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 )
             )
         }
-        return result
+        return result.toImmutableList()
     }
 
     private suspend fun seedInitialLayout(apps: List<AppItem>) {

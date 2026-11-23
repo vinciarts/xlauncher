@@ -80,16 +80,19 @@ import com.example.ui.components.AppContextMenuHost
 import com.example.ui.components.AppIconTile
 import com.example.ui.components.CreateDrawerTabDialog
 import com.example.ui.components.EditDrawerTabDialog
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppDrawerScreen(
     isActive: Boolean,
-    allApps: List<AppItem>,
-    drawerTabs: List<DrawerTab>,
-    drawerTabPages: List<DrawerTabPage>,
-    filteredDrawerApps: List<AppItem>,
+    allApps: ImmutableList<AppItem>,
+    drawerTabs: ImmutableList<DrawerTab>,
+    drawerTabPages: ImmutableList<DrawerTabPage>,
+    filteredDrawerApps: ImmutableList<AppItem>,
     drawerSearchQuery: String,
     autoFocusDrawerSearch: Boolean,
     drawerColumns: Int,
@@ -130,7 +133,7 @@ fun AppDrawerScreen(
     val minFlingVelocityPx = viewConfig.scaledMinimumFlingVelocity.toFloat()
 
     val pages = drawerTabPages.ifEmpty {
-        listOf(
+        persistentListOf(
             DrawerTabPage(
                 id = DrawerTab.ALL_TAB_ID,
                 name = "",
@@ -546,7 +549,7 @@ fun AppDrawerScreen(
 
 @Composable
 private fun DrawerAppsVerticalGrid(
-    apps: List<AppItem>,
+    apps: ImmutableList<AppItem>,
     cols: Int,
     tabIndex: Int,
     isCurrentPage: Boolean,
@@ -570,7 +573,7 @@ private fun DrawerAppsVerticalGrid(
             Box {
                 AppIconTile(
                     app = app,
-                    boundDirections = emptySet(),
+                    boundDirections = persistentSetOf(),
                     showLabel = true,
                     onWallpaper = false,
                     iconSize = iconSize,

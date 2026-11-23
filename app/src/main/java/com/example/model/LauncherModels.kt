@@ -6,6 +6,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 
 enum class SwipeDirection {
     UP,
@@ -174,7 +178,7 @@ data class AppMenuTarget(
     val app: AppItem,
     val origin: AppActionOrigin,
     val sourcePageIndex: Int = 0,
-    val shortcuts: List<AppShortcutItem> = emptyList(),
+    val shortcuts: ImmutableList<AppShortcutItem> = persistentListOf(),
 )
 
 @Immutable
@@ -233,7 +237,7 @@ data class WidgetResizeSpec(
 data class DrawerTab(
     val id: String,
     val name: String,
-    val appKeys: List<String> = emptyList(),
+    val appKeys: ImmutableList<String> = persistentListOf(),
     val isHidden: Boolean = false,
 ) {
     companion object {
@@ -246,7 +250,7 @@ data class DrawerTabPage(
     val id: String,
     val name: String,
     val isAllTab: Boolean,
-    val apps: List<AppItem>,
+    val apps: ImmutableList<AppItem>,
 )
 
 @Immutable
@@ -254,22 +258,22 @@ data class LauncherSettings(
     val homePageCount: Int = 2,
     val homeLoopPaging: Boolean = true,
     val homeGridColumns: Int = 4,
-    val homePages: Map<Int, List<String>> = emptyMap(),
-    val placedHomeApps: List<PlacedHomeApp> = emptyList(),
-    val placedWidgets: List<PlacedWidget> = emptyList(),
-    val dockKeys: List<String> = emptyList(),
+    val homePages: ImmutableMap<Int, ImmutableList<String>> = persistentMapOf(),
+    val placedHomeApps: ImmutableList<PlacedHomeApp> = persistentListOf(),
+    val placedWidgets: ImmutableList<PlacedWidget> = persistentListOf(),
+    val dockKeys: ImmutableList<String> = persistentListOf(),
     // Desktop-wide per-app swipe gestures: Map<appComponentKey, Map<SwipeDirection, targetAppOrShortcutKey>>
-    val appGestures: Map<String, Map<SwipeDirection, String>> = emptyMap(),
+    val appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>> = persistentMapOf(),
     // 4-direction Home desktop swipe gestures
-    val homeGestures: Map<SwipeDirection, HomeGestureAction> = defaultHomeGestures(),
+    val homeGestures: ImmutableMap<SwipeDirection, HomeGestureAction> = defaultHomeGestures(),
     val drawerColumns: Int = 4,
     // Custom tabs shown after the built-in "All" tab in the App Drawer
-    val drawerTabs: List<DrawerTab> = emptyList(),
+    val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,
     val hasSeededDefaults: Boolean = false,
 ) {
     companion object {
-        fun defaultHomeGestures(): Map<SwipeDirection, HomeGestureAction> = mapOf(
+        fun defaultHomeGestures(): ImmutableMap<SwipeDirection, HomeGestureAction> = persistentMapOf(
             SwipeDirection.UP to HomeGestureAction.OpenDrawer,
             SwipeDirection.DOWN to HomeGestureAction.ExpandNotifications,
             SwipeDirection.LEFT to HomeGestureAction.None,
@@ -281,23 +285,23 @@ data class LauncherSettings(
 @Immutable
 data class LauncherUiState(
     val isLoading: Boolean = true,
-    val allApps: List<AppItem> = emptyList(),
-    val appsByKey: Map<String, AppItem> = emptyMap(),
+    val allApps: ImmutableList<AppItem> = persistentListOf(),
+    val appsByKey: ImmutableMap<String, AppItem> = persistentMapOf(),
     val hasShortcutHostPermission: Boolean = false,
-    val allShortcuts: List<AppShortcutItem> = emptyList(),
-    val shortcutsByTargetKey: Map<String, AppShortcutItem> = emptyMap(),
-    val homePageApps: List<List<HomeAppSlot>> = listOf(emptyList(), emptyList()),
-    val homePageWidgets: List<List<PlacedWidget>> = listOf(emptyList(), emptyList()),
-    val dockApps: List<AppItem> = emptyList(),
-    val drawerTabPages: List<DrawerTabPage> = listOf(
+    val allShortcuts: ImmutableList<AppShortcutItem> = persistentListOf(),
+    val shortcutsByTargetKey: ImmutableMap<String, AppShortcutItem> = persistentMapOf(),
+    val homePageApps: ImmutableList<ImmutableList<HomeAppSlot>> = persistentListOf(persistentListOf(), persistentListOf()),
+    val homePageWidgets: ImmutableList<ImmutableList<PlacedWidget>> = persistentListOf(persistentListOf(), persistentListOf()),
+    val dockApps: ImmutableList<AppItem> = persistentListOf(),
+    val drawerTabPages: ImmutableList<DrawerTabPage> = persistentListOf(
         DrawerTabPage(
             id = DrawerTab.ALL_TAB_ID,
             name = "",
             isAllTab = true,
-            apps = emptyList(),
+            apps = persistentListOf(),
         )
     ),
-    val filteredDrawerApps: List<AppItem> = emptyList(),
+    val filteredDrawerApps: ImmutableList<AppItem> = persistentListOf(),
     val settings: LauncherSettings = LauncherSettings(),
     val destination: LauncherDestination = LauncherDestination.HOME,
     val currentHomePage: Int = 0,

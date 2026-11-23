@@ -88,6 +88,10 @@ import com.example.model.AppItem
 import com.example.model.AppMenuTarget
 import com.example.model.AppShortcutItem
 import com.example.model.SwipeDirection
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.ImmutableSet
+import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
 
 private class CoordinatesHolder(var coords: LayoutCoordinates? = null)
@@ -139,7 +143,7 @@ fun AppIconImage(
 @Composable
 fun AppIconTile(
     app: AppItem,
-    boundDirections: Set<SwipeDirection>,
+    boundDirections: ImmutableSet<SwipeDirection>,
     showLabel: Boolean = true,
     onWallpaper: Boolean = true,
     iconSize: Dp = 52.dp,
@@ -577,10 +581,10 @@ internal fun ExpressiveMenuGroupsContent(
 @Immutable
 data class AppContextMenuHost(
     val activeTarget: AppMenuTarget?,
-    val dockKeys: List<String>,
-    val appGestures: Map<String, Map<SwipeDirection, String>>,
-    val appsByKey: Map<String, AppItem>,
-    val shortcutsByTargetKey: Map<String, AppShortcutItem>,
+    val dockKeys: ImmutableList<String>,
+    val appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
+    val appsByKey: ImmutableMap<String, AppItem>,
+    val shortcutsByTargetKey: ImmutableMap<String, AppShortcutItem>,
     val hasShortcutHostPermission: Boolean,
     val hasWidgetsForPackage: (String) -> Boolean,
     val onOpen: (AppItem, AppActionOrigin, Int) -> Unit,
@@ -620,7 +624,9 @@ fun AppContextMenuDropdown(
     isPointerHeld: Boolean = false,
 ) {
     // Keep this app's loaded shortcuts stable while its exit animation finishes
-    var cachedShortcuts by remember(app.componentKey) { mutableStateOf<List<AppShortcutItem>>(emptyList()) }
+    var cachedShortcuts by remember(app.componentKey) {
+        mutableStateOf<ImmutableList<AppShortcutItem>>(persistentListOf())
+    }
     if (expanded) {
         host.activeTarget?.shortcuts?.let { cachedShortcuts = it }
     }

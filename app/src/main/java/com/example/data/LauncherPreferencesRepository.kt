@@ -16,6 +16,9 @@ import com.example.model.LauncherSettings
 import com.example.model.PlacedHomeApp
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -52,12 +55,14 @@ class LauncherPreferencesRepository(private val context: Context) {
             homePageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES),
             homeLoopPaging = prefs[Keys.HOME_LOOP_PAGING] ?: true,
             homeGridColumns = (prefs[Keys.HOME_GRID_COLUMNS] ?: 4).coerceIn(4, 5),
-            homePages = legacyHomePages,
-            placedHomeApps = gridApps,
-            placedWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]),
-            dockKeys = decodeList(prefs[Keys.DOCK_KEYS]).take(MAX_DOCK_ITEMS),
-            appGestures = decodeAppGestures(prefs[Keys.DOCK_GESTURES]),
-            homeGestures = mapOf(
+            homePages = legacyHomePages.mapValues { it.value.toImmutableList() }.toImmutableMap(),
+            placedHomeApps = gridApps.toImmutableList(),
+            placedWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).toImmutableList(),
+            dockKeys = decodeList(prefs[Keys.DOCK_KEYS]).take(MAX_DOCK_ITEMS).toImmutableList(),
+            appGestures = decodeAppGestures(prefs[Keys.DOCK_GESTURES])
+                .mapValues { it.value.toImmutableMap() }
+                .toImmutableMap(),
+            homeGestures = persistentMapOf(
                 SwipeDirection.UP to (prefs[Keys.HOME_GESTURE_UP]?.let { HomeGestureAction.decode(it) }
                     ?: HomeGestureAction.OpenDrawer),
                 SwipeDirection.DOWN to (prefs[Keys.HOME_GESTURE_DOWN]?.let { HomeGestureAction.decode(it) }
@@ -66,7 +71,7 @@ class LauncherPreferencesRepository(private val context: Context) {
                 SwipeDirection.RIGHT to HomeGestureAction.decode(prefs[Keys.HOME_GESTURE_RIGHT]),
             ),
             drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4).coerceIn(4, 5),
-            drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]),
+            drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toImmutableList(),
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
         )
@@ -555,7 +560,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             val current = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toMutableList()
             if (current.size >= MAX_DRAWER_TABS) return@edit
             val id = "tab_${UUID.randomUUID().toString().take(8)}"
-            current.add(DrawerTab(id = id, name = trimmed, appKeys = appKeys.distinct()))
+            current.add(DrawerTab(id = id, name = trimmed, appKeys = appKeys.distinct().toImmutableList()))
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(current)
             createdId = id
         }
@@ -576,7 +581,7 @@ class LauncherPreferencesRepository(private val context: Context) {
     suspend fun setDrawerTabApps(tabId: String, appKeys: Set<String>) {
         context.launcherDataStore.edit { prefs ->
             val updated = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).map { tab ->
-                if (tab.id == tabId) tab.copy(appKeys = appKeys.toList()) else tab
+                if (tab.id == tabId) tab.copy(appKeys = appKeys.toImmutableList()) else tab
             }
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
         }
@@ -591,7 +596,7 @@ class LauncherPreferencesRepository(private val context: Context) {
                 } else {
                     list.remove(componentKey)
                 }
-                tab.copy(appKeys = list)
+                tab.copy(appKeys = list.toImmutableList())
             }
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
         }
@@ -946,7 +951,7 @@ class LauncherPreferencesRepository(private val context: Context) {
                 emptyList()
             }
             val isHidden = parts.size >= 4 && parts[3] == "1"
-            DrawerTab(id = id, name = name, appKeys = keys, isHidden = isHidden)
+            DrawerTab(id = id, name = name, appKeys = keys.toImmutableList(), isHidden = isHidden)
         }
     }
 
