@@ -45,7 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -138,23 +138,13 @@ fun AppDrawerScreen(
         )
     }
 
-    val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { pages.size },
-    )
+    val pageCount = pages.size
+    val loopEnabled = pageCount > 1
 
     var showCreateTabDialog by remember { mutableStateOf(false) }
     var editingTabId by remember { mutableStateOf<String?>(null) }
-    var selectLastTabOnCreate by remember { mutableStateOf(false) }
-
-    LaunchedEffect(pages.size, selectLastTabOnCreate) {
-        if (selectLastTabOnCreate && pages.size > 1) {
-            selectLastTabOnCreate = false
-            pagerState.animateScrollToPage(pages.lastIndex)
-        } else if (pagerState.currentPage >= pages.size) {
-            pagerState.scrollToPage((pages.size - 1).coerceAtLeast(0))
-        }
-    }
+    var pendingSelectNewTabFromCount by remember { mutableStateOf<Int?>(null) }
+    var lastSelectedTabId by remember { mutableStateOf(DrawerTab.ALL_TAB_ID) }
 
     // Pull-to-close ONLY when starting already at top (never steals overscroll or closes after scrolling back up)
     val pullFromTopDismiss = remember(pagingTouchSlopPx, minFlingVelocityPx) {
@@ -210,119 +200,233 @@ fun AppDrawerScreen(
         }
     }
 
-    val currentPageIndex = pagerState.currentPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
-    val currentTabPage = pages[currentPageIndex]
     val editingTab = editingTabId?.let { id -> drawerTabs.firstOrNull { it.id == id } }
 
-    Box(
-        contentAlignment = Alignment.TopCenter,
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .nestedScroll(pullFromTopDismiss),
-    ) {
-        Column(
-            modifier = Modifier
+    key(pageCount) {
+        val basePage = remember(pageCount) {
+            val selectNewest = pendingSelectNewTabFromCount?.let { pageCount > it } == true
+            val initialReal = if (selectNewest && pageCount > 1) {
+                pages.lastIndex
+            } else {
+                pages.indexOfFirst { it.id == lastSelectedTabId }.takeIf { it >= 0 } ?: 0
+            }
+            if (loopEnabled) {
+                val mid = Int.MAX_VALUE / 2
+                mid - (mid % pageCount) + initialReal
+            } else {
+                0
+            }
+        }
+
+        val pagerState = rememberPagerState(
+            initialPage = basePage,
+            pageCount = { if (loopEnabled) Int.MAX_VALUE else 1 },
+        )
+
+        LaunchedEffect(pageCount) {
+            if (pendingSelectNewTabFromCount?.let { pageCount > it } == true) {
+                pendingSelectNewTabFromCount = null
+            }
+        }
+
+        val currentPageIndex = if (loopEnabled) {
+            ((pagerState.currentPage % pageCount) + pageCount) % pageCount
+        } else {
+            0
+        }
+        val currentTabPage = pages[currentPageIndex]
+
+        LaunchedEffect(currentTabPage.id) {
+            lastSelectedTabId = currentTabPage.id
+        }
+
+        Box(
+            contentAlignment = Alignment.TopCenter,
+            modifier = modifier
                 .fillMaxSize()
-                .widthIn(max = 660.dp)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding(),
+                .background(MaterialTheme.colorScheme.surface)
+                .nestedScroll(pullFromTopDismiss),
         ) {
-            // Top header area (search bar + native M3 TabRow); dragging or flinging down closes drawer
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .pointerInput(pagingTouchSlopPx, minFlingVelocityPx) {
-                        var dragY = 0f
-                        val velocityTracker = VelocityTracker()
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                dragY = 0f
-                                velocityTracker.resetTracking()
-                            },
-                            onDragEnd = {
-                                val velocityY = velocityTracker.calculateVelocity().y
-                                if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
-                                    currentOnClose()
-                                }
-                                dragY = 0f
-                                velocityTracker.resetTracking()
-                            },
-                            onDragCancel = {
-                                dragY = 0f
-                                velocityTracker.resetTracking()
-                            },
-                            onVerticalDrag = { change, dragAmount ->
-                                dragY += dragAmount
-                                velocityTracker.addPosition(change.uptimeMillis, change.position)
-                            },
-                        )
-                    },
+                    .fillMaxSize()
+                    .widthIn(max = 660.dp)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .imePadding(),
             ) {
-                // Native Material 3 pill search bar
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                // Top search header; dragging or flinging down closes drawer
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
-                        .height(48.dp),
+                        .pointerInput(pagingTouchSlopPx, minFlingVelocityPx) {
+                            var dragY = 0f
+                            val velocityTracker = VelocityTracker()
+                            detectVerticalDragGestures(
+                                onDragStart = {
+                                    dragY = 0f
+                                    velocityTracker.resetTracking()
+                                },
+                                onDragEnd = {
+                                    val velocityY = velocityTracker.calculateVelocity().y
+                                    if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
+                                        currentOnClose()
+                                    }
+                                    dragY = 0f
+                                    velocityTracker.resetTracking()
+                                },
+                                onDragCancel = {
+                                    dragY = 0f
+                                    velocityTracker.resetTracking()
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    dragY += dragAmount
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                },
+                            )
+                        },
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    // Native Material 3 pill search bar
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
+                            .height(48.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Box(modifier = Modifier.weight(1f)) {
-                            if (drawerSearchQuery.isEmpty()) {
-                                Text(
-                                    text = stringResource(R.string.search_apps_placeholder),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (drawerSearchQuery.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.search_apps_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                BasicTextField(
+                                    value = drawerSearchQuery,
+                                    onValueChange = onSearchQueryChange,
+                                    enabled = isActive,
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(focusRequester)
+                                        .testTag("drawer_search_input"),
                                 )
                             }
-                            BasicTextField(
-                                value = drawerSearchQuery,
-                                onValueChange = onSearchQueryChange,
-                                enabled = isActive,
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(focusRequester)
-                                    .testTag("drawer_search_input"),
-                            )
-                        }
-                        if (drawerSearchQuery.isNotEmpty()) {
-                            IconButton(
-                                onClick = { onSearchQueryChange("") },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.cd_clear_search),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                            if (drawerSearchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { onSearchQueryChange("") },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.cd_clear_search),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Native Material 3 Scrollable TabRow + quick Edit / Add tab buttons (hidden while searching)
-                if (drawerSearchQuery.isBlank()) {
+                if (drawerSearchQuery.isNotBlank()) {
+                    if (filteredDrawerApps.isEmpty()) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.empty_search_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        DrawerAppsVerticalGrid(
+                            apps = filteredDrawerApps,
+                            cols = drawerColumns,
+                            tabIndex = 0,
+                            onAppClick = onAppClick,
+                            onAppLongClick = onAppLongClick,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    HorizontalPager(
+                        state = pagerState,
+                        beyondViewportPageCount = 1,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .testTag("drawer_pager"),
+                    ) { virtualPage ->
+                        val realPage = if (loopEnabled) {
+                            ((virtualPage % pageCount) + pageCount) % pageCount
+                        } else {
+                            0
+                        }
+                        val tabPage = pages.getOrElse(realPage) { pages.first() }
+                        if (tabPage.apps.isEmpty()) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 32.dp),
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(R.string.empty_drawer_tab_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (!tabPage.isAllTab) {
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        FilledTonalButton(
+                                            onClick = { editingTabId = tabPage.id },
+                                            modifier = Modifier.testTag("empty_tab_add_apps_button"),
+                                        ) {
+                                            Text(stringResource(R.string.drawer_tab_add_apps_action))
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            DrawerAppsVerticalGrid(
+                                apps = tabPage.apps,
+                                cols = drawerColumns,
+                                tabIndex = realPage,
+                                onAppClick = onAppClick,
+                                onAppLongClick = onAppLongClick,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+
+                    // Bottom native Material 3 Scrollable TabRow + quick Edit / Add tab buttons
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -347,7 +451,13 @@ fun AppDrawerScreen(
                                 Tab(
                                     selected = currentPageIndex == index,
                                     onClick = {
-                                        scope.launch { pagerState.animateScrollToPage(index) }
+                                        if (loopEnabled && index != currentPageIndex) {
+                                            scope.launch {
+                                                pagerState.animateScrollToPage(
+                                                    pagerState.currentPage + (index - currentPageIndex)
+                                                )
+                                            }
+                                        }
                                     },
                                     text = {
                                         Text(
@@ -387,81 +497,6 @@ fun AppDrawerScreen(
                             )
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                }
-            }
-
-            if (drawerSearchQuery.isNotBlank()) {
-                if (filteredDrawerApps.isEmpty()) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.empty_search_hint),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    DrawerAppsVerticalGrid(
-                        apps = filteredDrawerApps,
-                        cols = drawerColumns,
-                        tabIndex = 0,
-                        onAppClick = onAppClick,
-                        onAppLongClick = onAppLongClick,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    )
-                }
-            } else {
-                HorizontalPager(
-                    state = pagerState,
-                    beyondViewportPageCount = 1,
-                    key = { index -> pages.getOrNull(index)?.id ?: index },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .testTag("drawer_pager"),
-                ) { pageIndex ->
-                    val tabPage = pages.getOrElse(pageIndex) { pages.first() }
-                    if (tabPage.apps.isEmpty()) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 32.dp),
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = stringResource(R.string.empty_drawer_tab_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                if (!tabPage.isAllTab) {
-                                    Spacer(modifier = Modifier.height(14.dp))
-                                    FilledTonalButton(
-                                        onClick = { editingTabId = tabPage.id },
-                                        modifier = Modifier.testTag("empty_tab_add_apps_button"),
-                                    ) {
-                                        Text(stringResource(R.string.drawer_tab_add_apps_action))
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        DrawerAppsVerticalGrid(
-                            apps = tabPage.apps,
-                            cols = drawerColumns,
-                            tabIndex = pageIndex,
-                            onAppClick = onAppClick,
-                            onAppLongClick = onAppLongClick,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
                 }
             }
         }
@@ -472,7 +507,7 @@ fun AppDrawerScreen(
             allApps = allApps,
             onConfirm = { name, appKeys ->
                 showCreateTabDialog = false
-                selectLastTabOnCreate = true
+                pendingSelectNewTabFromCount = pageCount
                 onCreateTab(name, appKeys)
             },
             onDismiss = { showCreateTabDialog = false },
