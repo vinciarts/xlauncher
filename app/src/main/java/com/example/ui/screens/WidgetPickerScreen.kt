@@ -61,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.ui.components.verticalFadingEdge
 import com.example.model.WidgetCatalogItem
 import com.example.search.PinyinSearchEngine
 import com.example.ui.components.ExpressiveSearchField
@@ -203,12 +204,15 @@ fun WidgetPickerScreen(
 
                     else -> {
                         val autoExpand = searchQuery.isNotBlank() || grouped.size <= 3
+                        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                         LazyColumn(
+                            state = listState,
                             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f),
+                                .weight(1f)
+                                .verticalFadingEdge(listState),
                         ) {
                             itemsIndexed(
                                 items = grouped,

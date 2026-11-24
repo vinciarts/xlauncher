@@ -106,11 +106,14 @@ fun CreateDrawerTabDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                 LazyColumn(
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 260.dp),
+                        .heightIn(max = 260.dp)
+                        .verticalFadingEdge(listState),
                 ) {
                     itemsIndexed(
                         items = filteredApps,
@@ -291,11 +294,14 @@ fun EditDrawerTabDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                 LazyColumn(
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 260.dp),
+                        .heightIn(max = 260.dp)
+                        .verticalFadingEdge(listState),
                 ) {
                     itemsIndexed(
                         items = filteredApps,
@@ -397,11 +403,14 @@ fun AssignAppTabsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else if (customTabs.isNotEmpty()) {
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 260.dp),
+                            .heightIn(max = 260.dp)
+                            .verticalFadingEdge(listState),
                     ) {
                         itemsIndexed(
                             items = customTabs,

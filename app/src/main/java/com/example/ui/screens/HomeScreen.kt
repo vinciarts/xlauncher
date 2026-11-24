@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -22,14 +23,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -731,8 +735,8 @@ fun HomeScreen(
                         tryAwaitRelease()
                     },
                     onTap = {
-                        if (currentIsHomeEditMode && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
-                            currentOnExitHomeEditMode()
+                        if (currentIsHomeEditMode && isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
+                            currentOnDismissResizeWidget()
                         }
                     },
                     onLongPress = { localOffset ->
@@ -1354,22 +1358,21 @@ fun HomeScreen(
                 }
             }
         } else if (isHomeEditMode) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-                tonalElevation = 4.dp,
+            FilledTonalButton(
+                onClick = currentOnExitHomeEditMode,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 6.dp)
-                    .testTag("home_edit_mode_banner"),
+                    .padding(top = 4.dp)
+                    .testTag("home_edit_done_button"),
             ) {
-                Text(
-                    text = stringResource(R.string.home_edit_mode_banner),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = stringResource(R.string.dialog_done))
             }
         }
     }

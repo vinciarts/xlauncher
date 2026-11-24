@@ -84,6 +84,7 @@ import com.example.ui.components.CreateDrawerTabDialog
 import com.example.ui.components.DrawerUniversalSearchResults
 import com.example.ui.components.EditDrawerTabDialog
 import com.example.ui.components.ExpressiveSearchField
+import com.example.ui.components.verticalFadingEdge
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
@@ -582,7 +583,7 @@ private fun DrawerAppsVerticalGrid(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier,
+        modifier = modifier.verticalFadingEdge(gridState),
     ) {
         items(
             items = apps,

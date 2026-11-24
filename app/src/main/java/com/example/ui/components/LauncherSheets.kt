@@ -288,10 +288,13 @@ fun AppGestureConfigSheet(
                         else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
                     }
 
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 360.dp),
+                            .heightIn(max = 360.dp)
+                            .verticalFadingEdge(listState),
                         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                     ) {
                         itemsIndexed(
@@ -435,11 +438,14 @@ fun HomeGesturePickerSheet(
                     val launcherActions = HomeGestureAction.launcherActions
                     val systemActions = HomeGestureAction.systemActions
 
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 460.dp),
+                            .heightIn(max = 460.dp)
+                            .verticalFadingEdge(listState),
                     ) {
                         item(key = "group_launcher") {
                             ExpressiveSectionHeader(title = stringResource(R.string.home_gesture_group_launcher))
@@ -624,10 +630,13 @@ fun HomeGesturePickerSheet(
                             else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
                         }
 
+                        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 360.dp),
+                                .heightIn(max = 360.dp)
+                                .verticalFadingEdge(listState),
                             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         ) {
                             itemsIndexed(

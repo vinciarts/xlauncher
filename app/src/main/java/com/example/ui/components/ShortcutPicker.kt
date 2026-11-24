@@ -151,10 +151,13 @@ fun ShortcutPickerContent(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     )
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 360.dp),
+            .heightIn(max = 360.dp)
+            .verticalFadingEdge(listState),
         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
     ) {
         itemsIndexed(

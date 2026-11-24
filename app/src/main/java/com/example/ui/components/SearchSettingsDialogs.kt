@@ -60,11 +60,14 @@ fun SearchFoldersDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 260.dp),
+                            .heightIn(max = 260.dp)
+                            .verticalFadingEdge(listState),
                     ) {
                         itemsIndexed(
                             items = folders,

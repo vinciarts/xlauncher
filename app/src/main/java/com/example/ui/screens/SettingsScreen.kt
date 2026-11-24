@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -58,6 +59,7 @@ import com.example.ui.components.EditDrawerTabDialog
 import com.example.ui.components.HomeGesturePickerSheet
 import com.example.ui.components.SearchFoldersDialog
 import com.example.ui.components.swipeDirectionLabel
+import com.example.ui.components.verticalFadingEdge
 import com.example.ui.screens.settings.HomeActionTrigger
 import com.example.ui.screens.settings.generalSettingsItems
 import com.example.ui.screens.settings.gestureSettingsItems
@@ -227,16 +229,19 @@ fun SettingsScreen(
                 .padding(innerPadding),
         ) { pageIndex ->
             val selectedTab = SettingsTab.entries[pageIndex]
+            val listState = rememberLazyListState()
             Box(
                 contentAlignment = Alignment.TopCenter,
                 modifier = Modifier.fillMaxSize(),
             ) {
                 LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .fillMaxSize()
-                        .widthIn(max = 600.dp),
+                        .widthIn(max = 600.dp)
+                        .verticalFadingEdge(listState),
                 ) {
                     when (selectedTab) {
                         SettingsTab.GENERAL -> generalSettingsItems(

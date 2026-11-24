@@ -101,13 +101,17 @@ fun DrawerUniversalSearchResults(
     val context = LocalContext.current
     val iconSize = if (cols == 5) 48.dp else 52.dp
     val segmentedColors = ListItemDefaults.segmentedColors()
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),
+        state = gridState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier.testTag("drawer_search_results"),
+        modifier = modifier
+            .verticalFadingEdge(gridState)
+            .testTag("drawer_search_results"),
     ) {
         if (apps.isNotEmpty()) {
             if (hasExtraResults) {
