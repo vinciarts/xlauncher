@@ -85,8 +85,7 @@ internal fun LazyListScope.layoutSettingsItems(
                 }
 
                 SegmentedListItem(
-                    checked = settings.homeLoopPaging,
-                    onCheckedChange = onSetHomeLoopPaging,
+                    onClick = { onSetHomeLoopPaging(!settings.homeLoopPaging) },
                     shapes = ListItemDefaults.segmentedShapes(index = 2, count = 3),
                     colors = segmentedColors,
                     trailingContent = {
@@ -164,8 +163,7 @@ internal fun LazyListScope.layoutSettingsItems(
                 val allCountText = stringResource(R.string.drawer_tab_app_count, uiState.allApps.size)
                 val allCanToggle = settings.isAllTabHidden || visibleTabCount > 1
                 SegmentedListItem(
-                    checked = !settings.isAllTabHidden,
-                    onCheckedChange = { visible -> onSetAllTabHidden(!visible) },
+                    onClick = { onSetAllTabHidden(!settings.isAllTabHidden) },
                     enabled = allCanToggle,
                     shapes = ListItemDefaults.segmentedShapes(index = 0, count = totalTabs),
                     colors = segmentedColors,

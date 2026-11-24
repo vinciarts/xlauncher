@@ -71,8 +71,7 @@ internal fun LazyListScope.searchSettingsItems(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 SegmentedListItem(
-                    checked = settings.searchShortcutsEnabled,
-                    onCheckedChange = onSetSearchShortcutsEnabled,
+                    onClick = { onSetSearchShortcutsEnabled(!settings.searchShortcutsEnabled) },
                     shapes = ListItemDefaults.segmentedShapes(index = 0, count = 3),
                     colors = segmentedColors,
                     leadingContent = {
@@ -106,8 +105,8 @@ internal fun LazyListScope.searchSettingsItems(
                 )
 
                 SegmentedListItem(
-                    checked = settings.searchContactsEnabled,
-                    onCheckedChange = { enable ->
+                    onClick = {
+                        val enable = !settings.searchContactsEnabled
                         if (!enable) {
                             onSetSearchContactsEnabled(false)
                         } else {
@@ -236,9 +235,8 @@ internal fun LazyListScope.searchSettingsItems(
                     filteredProviders.forEachIndexed { idx, provider ->
                         val enabled = provider.packageName in enabledSet
                         SegmentedListItem(
-                            checked = enabled,
-                            onCheckedChange = { checked ->
-                                onSetSearchThirdPartyAppEnabled(provider.packageName, checked)
+                            onClick = {
+                                onSetSearchThirdPartyAppEnabled(provider.packageName, !enabled)
                             },
                             shapes = ListItemDefaults.segmentedShapes(
                                 index = idx,
