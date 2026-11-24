@@ -287,7 +287,7 @@ fun HomeScreen(
         val itemSizePx = fixedItemSizePx?.takeIf { it.width > 0f && it.height > 0f } ?: defaultItemSize
 
         val activeRemoveBounds = currentRemoveZoneBounds
-        val removeHitPadPx = with(density) { 16.dp.toPx() }
+        val removeHitPadPx = with(density) { 4.dp.toPx() }
         val isOverRemove = activeRemoveBounds != Rect.Zero &&
             pointerWindowPos.y <= activeRemoveBounds.bottom + removeHitPadPx &&
             pointerWindowPos.x in (activeRemoveBounds.left - removeHitPadPx)..(activeRemoveBounds.right + removeHitPadPx)
@@ -731,12 +731,12 @@ fun HomeScreen(
                         tryAwaitRelease()
                     },
                     onTap = {
-                        if (currentIsHomeEditMode && !isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
+                        if (currentIsHomeEditMode && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
                             currentOnExitHomeEditMode()
                         }
                     },
                     onLongPress = { localOffset ->
-                        if (!isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
+                        if (!currentIsHomeEditMode && !isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             currentOnEmptyLongPress(localOffset)
                         }
@@ -1057,6 +1057,12 @@ fun HomeScreen(
                                 onAppDragMove = { pos -> updateDrag(pos) },
                                 onAppDragEnd = { pos -> finishDrag(pos) },
                                 onAppDragCancel = { dragSession = null },
+                                onWidgetDragStart = { widget, bounds, pos ->
+                                    startDrag(DragItem.Widget(widget), bounds, pos, keepResizeMode = true)
+                                },
+                                onWidgetDragMove = { pos -> updateDrag(pos) },
+                                onWidgetDragEnd = { pos -> finishDrag(pos) },
+                                onWidgetDragCancel = { dragSession = null },
                             )
                         }
 
@@ -1134,7 +1140,9 @@ fun HomeScreen(
                                     },
                                     onClick = { onAppClick(app) },
                                     onLongClick = {
-                                        appMenuHost.onOpen(app, AppActionOrigin.DOCK, 0)
+                                        if (!isHomeEditMode) {
+                                            appMenuHost.onOpen(app, AppActionOrigin.DOCK, 0)
+                                        }
                                     },
                                     onLongPressHoldChanged = { isPointerHeld = it },
                                     onSwipe = { dir -> onAppSwipe(app, dir, AppActionOrigin.DOCK) },
@@ -1155,7 +1163,7 @@ fun HomeScreen(
                                     app = app,
                                     origin = AppActionOrigin.DOCK,
                                     sourcePageIndex = 0,
-                                    expanded = appMenuHost.isExpandedFor(app, AppActionOrigin.DOCK, 0),
+                                    expanded = !isHomeEditMode && appMenuHost.isExpandedFor(app, AppActionOrigin.DOCK, 0),
                                     host = appMenuHost,
                                     isPointerHeld = isPointerHeld,
                                 )
@@ -1247,52 +1255,6 @@ fun HomeScreen(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                // Outside-tap layer: tapping another widget switches selection in edit mode;
-                // tapping empty space exits edit mode directly.
-                if (dragSession == null) {
-                    val currentPageWidgets = homePageWidgets.getOrElse(activeWidget.pageIndex) { emptyList() }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(activeWidget.appWidgetId, currentPageWidgets, pageGridMetrics, safeCols, safeRows) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = true)
-                                    down.consume()
-                                    var upPos = down.position
-                                    while (true) {
-                                        val ev = awaitPointerEvent()
-                                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                                        upPos = ch.position
-                                        ch.consume()
-                                        if (!ch.pressed) break
-                                    }
-                                    val winPos = upPos + rootPos
-                                    val hitWidget = if (hasGridMetrics) {
-                                        currentPageWidgets.firstOrNull { w ->
-                                            w.appWidgetId != activeWidget.appWidgetId && run {
-                                                val sx = w.spanX.coerceIn(1, safeCols)
-                                                val sy = w.spanY.coerceIn(1, safeRows)
-                                                val cx = w.cellX.coerceIn(0, (safeCols - sx).coerceAtLeast(0))
-                                                val cy = w.cellY.coerceIn(0, (safeRows - sy).coerceAtLeast(0))
-                                                val l = pageGridMetrics.gridBounds.left + cx * pageGridMetrics.colStepPx
-                                                val t = pageGridMetrics.gridBounds.top + cy * pageGridMetrics.rowStepPx
-                                                val r = l + sx * pageGridMetrics.cellWidthPx + (sx - 1) * pageGridMetrics.colGapPx
-                                                val b = t + sy * pageGridMetrics.cellHeightPx + (sy - 1) * pageGridMetrics.rowGapPx
-                                                winPos.x in l..r && winPos.y in t..b
-                                            }
-                                        }
-                                    } else {
-                                        null
-                                    }
-                                    if (hitWidget != null) {
-                                        currentOnSelectEditWidget(hitWidget)
-                                    } else {
-                                        currentOnExitHomeEditMode()
-                                    }
-                                }
-                            },
-                    )
-                }
                 // Measure with unbounded exact Constraints.fixed so full-width/full-height widgets
                 // (whose outer handle margin exceeds screen width) are never clamped or shifted left.
                 WidgetResizeFrameOverlay(
@@ -1331,7 +1293,7 @@ fun HomeScreen(
         // Empty-space long-press menu anchored directly at the local tap coordinate
         val safeCurrentPage = currentHomePage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
         HomeEmptyMenuPopup(
-            anchorOffset = homeEmptyMenuAnchor,
+            anchorOffset = if (isHomeEditMode) null else homeEmptyMenuAnchor,
             canAddPage = pageCount < maxHomePages,
             canMovePageLeft = pageCount > 1 && safeCurrentPage > 0,
             canMovePageRight = pageCount > 1 && safeCurrentPage < pageCount - 1,

@@ -33,11 +33,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
@@ -61,6 +63,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 
 @Composable
@@ -129,6 +132,10 @@ internal fun HomePageContent(
     onAppDragMove: (Offset) -> Unit,
     onAppDragEnd: (Offset) -> Unit,
     onAppDragCancel: () -> Unit,
+    onWidgetDragStart: (PlacedWidget, Rect, Offset) -> Unit,
+    onWidgetDragMove: (Offset) -> Unit,
+    onWidgetDragEnd: (Offset) -> Unit,
+    onWidgetDragCancel: () -> Unit,
 ) {
     val density = LocalDensity.current
     val safeCols = cols.coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
@@ -198,12 +205,18 @@ internal fun HomePageContent(
                                     widgetHostController = widgetHostController,
                                     onResizingBoundsChanged = onResizingWidgetBoundsChanged,
                                     onSelectInEditMode = { onSelectEditWidget(widget) },
+                                    onWidgetDragStart = { bounds, pos -> onWidgetDragStart(widget, bounds, pos) },
+                                    onWidgetDragMove = onWidgetDragMove,
+                                    onWidgetDragEnd = onWidgetDragEnd,
+                                    onWidgetDragCancel = onWidgetDragCancel,
                                     onTouchDown = onWidgetTouchDown,
-                                    onLongClick = { widgetMenuHost.onOpen(widget) },
+                                    onLongClick = { if (!isHomeEditMode) widgetMenuHost.onOpen(widget) },
                                 )
                                 WidgetContextMenuDropdown(
                                     widget = widget,
-                                    expanded = isCurrentVirtualPage && widgetMenuHost.activeWidgetId == widget.appWidgetId,
+                                    expanded = !isHomeEditMode &&
+                                        isCurrentVirtualPage &&
+                                        widgetMenuHost.activeWidgetId == widget.appWidgetId,
                                     cols = safeCols,
                                     widgetHostController = widgetHostController,
                                     host = widgetMenuHost,
@@ -240,7 +253,9 @@ internal fun HomePageContent(
                                     onDownPointer = onIconDownPointer,
                                     onClick = { onAppClick(slot.app) },
                                     onLongClick = {
-                                        appMenuHost.onOpen(slot.app, AppActionOrigin.HOME, realPage)
+                                        if (!isHomeEditMode) {
+                                            appMenuHost.onOpen(slot.app, AppActionOrigin.HOME, realPage)
+                                        }
                                     },
                                     onLongPressHoldChanged = { isPointerHeld = it },
                                     onSwipe = { dir -> onAppSwipe(slot.app, dir, AppActionOrigin.HOME) },
@@ -258,7 +273,8 @@ internal fun HomePageContent(
                                     app = slot.app,
                                     origin = AppActionOrigin.HOME,
                                     sourcePageIndex = realPage,
-                                    expanded = isCurrentVirtualPage &&
+                                    expanded = !isHomeEditMode &&
+                                        isCurrentVirtualPage &&
                                         appMenuHost.isExpandedFor(slot.app, AppActionOrigin.HOME, realPage),
                                     host = appMenuHost,
                                     isPointerHeld = isPointerHeld,
@@ -283,12 +299,21 @@ private fun HomeWidgetSlot(
     widgetHostController: WidgetHostController,
     onResizingBoundsChanged: (Rect) -> Unit,
     onSelectInEditMode: () -> Unit,
+    onWidgetDragStart: (Rect, Offset) -> Unit,
+    onWidgetDragMove: (Offset) -> Unit,
+    onWidgetDragEnd: (Offset) -> Unit,
+    onWidgetDragCancel: () -> Unit,
     onTouchDown: (Long?) -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     val currentOnTouchDown by rememberUpdatedState(onTouchDown)
     val currentOnLongClick by rememberUpdatedState(onLongClick)
     val currentOnSelectInEditMode by rememberUpdatedState(onSelectInEditMode)
+    val currentOnWidgetDragStart by rememberUpdatedState(onWidgetDragStart)
+    val currentOnWidgetDragMove by rememberUpdatedState(onWidgetDragMove)
+    val currentOnWidgetDragEnd by rememberUpdatedState(onWidgetDragEnd)
+    val currentOnWidgetDragCancel by rememberUpdatedState(onWidgetDragCancel)
     val currentOnResizingBoundsChanged by rememberUpdatedState(onResizingBoundsChanged)
     val slotCoordsRef = remember { LayoutCoordsRef() }
 
@@ -376,16 +401,69 @@ private fun HomeWidgetSlot(
                 }
             }
         }
-        if (isHomeEditMode && !isResizing) {
-            // In layout edit mode, tapping any widget selects it for resize/drag instead of firing widget clicks.
+        if (isHomeEditMode) {
+            // In edit mode, no menus exist: tapping selects for 4-edge resize, and reaching the
+            // long-press threshold vibrates, selects the widget, and enters drag immediately.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(widget.appWidgetId) {
-                        detectTapGestures(
-                            onTap = { currentOnSelectInEditMode() },
-                            onLongPress = { currentOnLongClick() },
-                        )
+                        val touchSlop = viewConfiguration.touchSlop
+                        val longPressTimeoutMs = viewConfiguration.longPressTimeoutMillis
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var lastPos = down.position
+                            var longPressFired = false
+                            val deadline = android.os.SystemClock.uptimeMillis() + longPressTimeoutMs
+                            while (true) {
+                                val remaining = deadline - android.os.SystemClock.uptimeMillis()
+                                if (remaining <= 0L) {
+                                    longPressFired = true
+                                    break
+                                }
+                                val event = withTimeoutOrNull(remaining) { awaitPointerEvent() }
+                                if (event == null) {
+                                    longPressFired = true
+                                    break
+                                }
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                lastPos = change.position
+                                if (!change.pressed) {
+                                    if ((lastPos - down.position).getDistance() <= touchSlop) {
+                                        change.consume()
+                                        currentOnSelectInEditMode()
+                                    }
+                                    break
+                                }
+                                if ((lastPos - down.position).getDistance() > touchSlop) {
+                                    break
+                                }
+                            }
+                            if (longPressFired) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                currentOnSelectInEditMode()
+                                val coords = slotCoordsRef.coords?.takeIf { it.isAttached }
+                                val startBounds = coords?.boundsInWindow() ?: Rect.Zero
+                                val anchorWindow = coords?.localToWindow(lastPos) ?: lastPos
+                                currentOnWidgetDragStart(startBounds, anchorWindow)
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null) {
+                                        currentOnWidgetDragCancel()
+                                        break
+                                    }
+                                    change.consume()
+                                    val nowWindow = slotCoordsRef.coords?.takeIf { it.isAttached }
+                                        ?.localToWindow(change.position) ?: anchorWindow
+                                    if (!change.pressed) {
+                                        currentOnWidgetDragEnd(nowWindow)
+                                        break
+                                    }
+                                    currentOnWidgetDragMove(nowWindow)
+                                }
+                            }
+                        }
                     },
             )
         }

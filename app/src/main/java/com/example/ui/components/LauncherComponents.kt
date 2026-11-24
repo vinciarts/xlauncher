@@ -308,48 +308,29 @@ fun AppIconTile(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         val startBounds = coordsHolder.coords?.takeIf { it.isAttached }?.boundsInWindow()
                         val anchorWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(lastPos) ?: lastPos
-                        var dragStarted = false
                         var latestWindowPos = anchorWindow
 
-                        // Open context menu immediately on long-press (standard Android launcher behavior);
-                        // keep Popup non-focusable until finger lifts so sliding past touchSlop transitions cleanly into drag.
-                        currentOnLongPressHoldChanged?.invoke(true)
-                        currentOnLongClick()
+                        interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
+                        pressReleased = true
+                        currentOnDragStart?.invoke(startBounds ?: Rect.Zero, anchorWindow)
 
-                        try {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id }
-                                if (change == null) {
-                                    if (dragStarted) currentOnDragCancel?.invoke()
-                                    break
-                                }
-                                change.consume()
-                                val nowWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
-                                    ?: latestWindowPos
-                                latestWindowPos = nowWindow
-
-                                if (!change.pressed) {
-                                    if (dragStarted) {
-                                        currentOnDragEnd?.invoke(nowWindow)
-                                    }
-                                    break
-                                }
-
-                                if (!dragStarted) {
-                                    if ((nowWindow - anchorWindow).getDistance() > touchSlop) {
-                                        dragStarted = true
-                                        currentOnLongPressHoldChanged?.invoke(false)
-                                        interactionSource.tryEmit(PressInteraction.Cancel(pressInteraction))
-                                        pressReleased = true
-                                        currentOnDragStart?.invoke(startBounds ?: Rect.Zero, nowWindow)
-                                    }
-                                } else {
-                                    currentOnDragMove?.invoke(nowWindow)
-                                }
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null) {
+                                currentOnDragCancel?.invoke()
+                                break
                             }
-                        } finally {
-                            currentOnLongPressHoldChanged?.invoke(false)
+                            change.consume()
+                            val nowWindow = coordsHolder.coords?.takeIf { it.isAttached }?.localToWindow(change.position)
+                                ?: latestWindowPos
+                            latestWindowPos = nowWindow
+
+                            if (!change.pressed) {
+                                currentOnDragEnd?.invoke(nowWindow)
+                                break
+                            }
+                            currentOnDragMove?.invoke(nowWindow)
                         }
                         if (!pressReleased) {
                             interactionSource.tryEmit(PressInteraction.Release(pressInteraction))
