@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -25,19 +26,100 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
+private const val CURRENT_SCHEMA_VERSION = 2
+private const val PREF_PAGE_SEP = ";"
+private const val PREF_ITEM_SEP = ","
+private const val PREF_KV_SEP = ":"
+private const val PREF_WIDGET_FIELD_SEP = "|"
+
+private object PrefKeys {
+    val SCHEMA_VERSION = intPreferencesKey("schema_version")
+    val LEGACY_HOME_PAGES_DATA = stringPreferencesKey("home_pages_data")
+    val HOME_APPS_GRID = stringPreferencesKey("home_apps_grid")
+    val SEARCH_THIRD_PARTY_PACKAGES = stringPreferencesKey("search_third_party_packages")
+    val SEARCH_THIRD_PARTY_APPS_ENABLED = booleanPreferencesKey("search_third_party_apps_enabled")
+}
+
+private object LauncherPrefsMigration : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        (currentData[PrefKeys.SCHEMA_VERSION] ?: 1) < CURRENT_SCHEMA_VERSION
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val mutable = currentData.toMutablePreferences()
+        val version = currentData[PrefKeys.SCHEMA_VERSION] ?: 1
+        if (version < 2) {
+            // Migrate v1 home_pages_data -> home_apps_grid if grid is not yet populated
+            if (mutable[PrefKeys.HOME_APPS_GRID] == null) {
+                val legacyPages = decodeLegacyHomePages(mutable[PrefKeys.LEGACY_HOME_PAGES_DATA])
+                if (legacyPages.isNotEmpty()) {
+                    val migratedApps = mutableListOf<PlacedHomeApp>()
+                    legacyPages.entries.sortedBy { it.key }.forEach { (page, keys) ->
+                        keys.distinct().forEach { key ->
+                            migratedApps.add(
+                                PlacedHomeApp(componentKey = key, pageIndex = page, cellX = -1, cellY = -1)
+                            )
+                        }
+                    }
+                    mutable[PrefKeys.HOME_APPS_GRID] = encodePlacedHomeAppsHelper(migratedApps)
+                }
+            }
+            mutable.remove(PrefKeys.LEGACY_HOME_PAGES_DATA)
+
+            // Migrate v1 search_third_party_packages -> search_third_party_apps_enabled
+            if (mutable[PrefKeys.SEARCH_THIRD_PARTY_APPS_ENABLED] == null &&
+                mutable[PrefKeys.SEARCH_THIRD_PARTY_PACKAGES] != null
+            ) {
+                val hadSelected = decodeEncodedListHelper(mutable[PrefKeys.SEARCH_THIRD_PARTY_PACKAGES]).isNotEmpty()
+                mutable[PrefKeys.SEARCH_THIRD_PARTY_APPS_ENABLED] = hadSelected
+            }
+            mutable.remove(PrefKeys.SEARCH_THIRD_PARTY_PACKAGES)
+        }
+        mutable[PrefKeys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
+        return mutable.toPreferences()
+    }
+
+    override suspend fun cleanUp() = Unit
+}
+
+private fun decodeLegacyHomePages(raw: String?): Map<Int, List<String>> {
+    if (raw.isNullOrBlank()) return emptyMap()
+    val result = linkedMapOf<Int, List<String>>()
+    raw.split(PREF_PAGE_SEP).forEach { segment ->
+        val sep = segment.indexOf(PREF_KV_SEP)
+        if (sep > 0) {
+            val page = segment.substring(0, sep).toIntOrNull() ?: return@forEach
+            val items = segment.substring(sep + 1).split(PREF_ITEM_SEP).filter { it.isNotBlank() }
+            if (items.isNotEmpty()) result[page] = items
+        }
+    }
+    return result
+}
+
+private fun encodePlacedHomeAppsHelper(apps: List<PlacedHomeApp>): String =
+    apps.joinToString(PREF_PAGE_SEP) { a ->
+        listOf(a.pageIndex, a.cellX, a.cellY, Uri.encode(a.componentKey)).joinToString(PREF_WIDGET_FIELD_SEP)
+    }
+
+private fun decodeEncodedListHelper(raw: String?): List<String> =
+    raw?.split(PREF_PAGE_SEP)
+        ?.mapNotNull { segment -> Uri.decode(segment).takeIf { it.isNotBlank() } }
+        ?.distinct()
+        ?: emptyList()
+
 private val Context.launcherDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "qingfeng_launcher_v2"
+    name = "qingfeng_launcher_v2",
+    produceMigrations = { listOf(LauncherPrefsMigration) },
 )
 
 class LauncherPreferencesRepository(private val context: Context) {
 
     private object Keys {
+        val SCHEMA_VERSION = PrefKeys.SCHEMA_VERSION
         val HOME_PAGE_COUNT = intPreferencesKey("home_page_count")
         val HOME_LOOP_PAGING = booleanPreferencesKey("home_loop_paging")
         val HOME_GRID_COLUMNS = intPreferencesKey("home_grid_columns")
         val HOME_GRID_ROWS = intPreferencesKey("home_grid_rows")
-        val HOME_PAGES_DATA = stringPreferencesKey("home_pages_data")
-        val HOME_APPS_GRID = stringPreferencesKey("home_apps_grid")
+        val HOME_APPS_GRID = PrefKeys.HOME_APPS_GRID
         val PLACED_WIDGETS = stringPreferencesKey("placed_widgets")
         val DOCK_KEYS = stringPreferencesKey("dock_keys")
         val DOCK_GESTURES = stringPreferencesKey("dock_gestures")
@@ -54,21 +136,18 @@ class LauncherPreferencesRepository(private val context: Context) {
         val SEARCH_CONTACTS_ENABLED = booleanPreferencesKey("search_contacts_enabled")
         val SEARCH_FILES_ENABLED = booleanPreferencesKey("search_files_enabled")
         val SEARCH_FILE_TREE_URIS = stringPreferencesKey("search_file_tree_uris")
-        val SEARCH_THIRD_PARTY_PACKAGES = stringPreferencesKey("search_third_party_packages")
-        val SEARCH_THIRD_PARTY_APPS_ENABLED = booleanPreferencesKey("search_third_party_apps_enabled")
+        val SEARCH_THIRD_PARTY_APPS_ENABLED = PrefKeys.SEARCH_THIRD_PARTY_APPS_ENABLED
         val SEARCH_WEB_ENABLED = booleanPreferencesKey("search_web_enabled")
         val SEARCH_WEB_ENGINE = stringPreferencesKey("search_web_engine")
     }
 
     val settingsFlow: Flow<LauncherSettings> = context.launcherDataStore.data.map { prefs ->
-        val legacyHomePages = decodeHomePages(prefs[Keys.HOME_PAGES_DATA])
-        val gridApps = readHomeApps(prefs, legacyHomePages)
+        val gridApps = readHomeApps(prefs)
         LauncherSettings(
             homePageCount = (prefs[Keys.HOME_PAGE_COUNT] ?: 2).coerceIn(1, MAX_HOME_PAGES),
             homeLoopPaging = prefs[Keys.HOME_LOOP_PAGING] ?: true,
             homeGridColumns = readGridColumns(prefs),
             homeGridRows = readGridRows(prefs),
-            homePages = legacyHomePages.mapValues { it.value.toImmutableList() }.toImmutableMap(),
             placedHomeApps = gridApps.toImmutableList(),
             placedWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).toImmutableList(),
             dockKeys = decodeList(prefs[Keys.DOCK_KEYS]).take(MAX_DOCK_ITEMS).toImmutableList(),
@@ -93,29 +172,14 @@ class LauncherPreferencesRepository(private val context: Context) {
             searchContactsEnabled = prefs[Keys.SEARCH_CONTACTS_ENABLED] ?: false,
             searchFilesEnabled = prefs[Keys.SEARCH_FILES_ENABLED] ?: false,
             searchFileTreeUris = decodeEncodedList(prefs[Keys.SEARCH_FILE_TREE_URIS]).toImmutableList(),
-            searchThirdPartyAppsEnabled = prefs[Keys.SEARCH_THIRD_PARTY_APPS_ENABLED]
-                ?: decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).isNotEmpty(),
+            searchThirdPartyAppsEnabled = prefs[Keys.SEARCH_THIRD_PARTY_APPS_ENABLED] ?: false,
             searchWebEnabled = prefs[Keys.SEARCH_WEB_ENABLED] ?: true,
             searchWebEngine = WebSearchEngine.decode(prefs[Keys.SEARCH_WEB_ENGINE]),
         )
     }
 
-    private fun readHomeApps(
-        prefs: Preferences,
-        legacyPages: Map<Int, List<String>> = decodeHomePages(prefs[Keys.HOME_PAGES_DATA]),
-    ): List<PlacedHomeApp> {
-        val rawGrid = prefs[Keys.HOME_APPS_GRID]
-        if (rawGrid != null) {
-            return decodePlacedHomeApps(rawGrid)
-        }
-        val migrated = mutableListOf<PlacedHomeApp>()
-        legacyPages.entries.sortedBy { it.key }.forEach { (page, keys) ->
-            keys.distinct().forEach { key ->
-                migrated.add(PlacedHomeApp(componentKey = key, pageIndex = page, cellX = -1, cellY = -1))
-            }
-        }
-        return migrated
-    }
+    private fun readHomeApps(prefs: Preferences): List<PlacedHomeApp> =
+        decodePlacedHomeApps(prefs[Keys.HOME_APPS_GRID])
 
     private fun readGridColumns(prefs: Preferences): Int =
         (prefs[Keys.HOME_GRID_COLUMNS] ?: HomeGridEngine.DEFAULT_HOME_GRID_COLUMNS)
@@ -163,8 +227,8 @@ class LauncherPreferencesRepository(private val context: Context) {
                     }
                 }
             }
+            prefs[Keys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
             prefs[Keys.DOCK_KEYS] = encodeList(dockKeys.take(MAX_DOCK_ITEMS))
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(homePages)
             prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(seededApps)
             prefs[Keys.HOME_PAGE_COUNT] = homePages.size.coerceIn(2, MAX_HOME_PAGES)
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true
@@ -1241,16 +1305,12 @@ class LauncherPreferencesRepository(private val context: Context) {
 
     suspend fun restoreSettings(restored: RestoredLauncherSettings) {
         context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
             prefs[Keys.HOME_PAGE_COUNT] = restored.homePageCount
             prefs[Keys.HOME_LOOP_PAGING] = restored.homeLoopPaging
             prefs[Keys.HOME_GRID_COLUMNS] = restored.homeGridColumns
             prefs[Keys.HOME_GRID_ROWS] = restored.homeGridRows
             prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(restored.placedHomeApps)
-
-            val legacyPages = restored.placedHomeApps
-                .groupBy { it.pageIndex }
-                .mapValues { (_, list) -> list.map { it.componentKey }.distinct() }
-            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(legacyPages)
 
             prefs[Keys.DOCK_KEYS] = encodeList(restored.dockKeys)
             prefs[Keys.DOCK_GESTURES] = encodeAppGestures(restored.appGestures)
@@ -1278,39 +1338,13 @@ class LauncherPreferencesRepository(private val context: Context) {
         items.distinct().joinToString(PAGE_SEP) { Uri.encode(it) }
 
     private fun decodeEncodedList(raw: String?): List<String> =
-        raw?.split(PAGE_SEP)
-            ?.mapNotNull { segment -> Uri.decode(segment).takeIf { it.isNotBlank() } }
-            ?.distinct()
-            ?: emptyList()
+        decodeEncodedListHelper(raw)
 
     private fun encodeList(items: List<String>): String =
         items.distinct().joinToString(ITEM_SEP)
 
     private fun decodeList(raw: String?): List<String> =
         raw?.split(ITEM_SEP)?.filter { it.isNotBlank() } ?: emptyList()
-
-    // Format: "0:pkg/cls,pkg2/cls2;1:pkg3/cls3"
-    private fun encodeHomePages(pages: Map<Int, List<String>>): String =
-        pages.entries
-            .sortedBy { it.key }
-            .filter { it.value.isNotEmpty() }
-            .joinToString(PAGE_SEP) { (page, keys) ->
-                "$page$KV_SEP${keys.distinct().joinToString(ITEM_SEP)}"
-            }
-
-    private fun decodeHomePages(raw: String?): Map<Int, List<String>> {
-        if (raw.isNullOrBlank()) return emptyMap()
-        val result = linkedMapOf<Int, List<String>>()
-        raw.split(PAGE_SEP).forEach { segment ->
-            val sep = segment.indexOf(KV_SEP)
-            if (sep > 0) {
-                val page = segment.substring(0, sep).toIntOrNull() ?: return@forEach
-                val items = segment.substring(sep + 1).split(ITEM_SEP).filter { it.isNotBlank() }
-                if (items.isNotEmpty()) result[page] = items
-            }
-        }
-        return result
-    }
 
     // Format: "appKey>UP=targetKey,LEFT=targetKey2;appKey2>DOWN=targetKey3"
     private fun encodeAppGestures(gestures: Map<String, Map<SwipeDirection, String>>): String =
@@ -1376,9 +1410,7 @@ class LauncherPreferencesRepository(private val context: Context) {
 
     // Format: "page|cellX|cellY|encodedComponentKey;..."
     private fun encodePlacedHomeApps(apps: List<PlacedHomeApp>): String =
-        apps.joinToString(PAGE_SEP) { a ->
-            listOf(a.pageIndex, a.cellX, a.cellY, Uri.encode(a.componentKey)).joinToString(WIDGET_FIELD_SEP)
-        }
+        encodePlacedHomeAppsHelper(apps)
 
     private fun decodePlacedHomeApps(raw: String?): List<PlacedHomeApp> {
         if (raw.isNullOrBlank()) return emptyList()
