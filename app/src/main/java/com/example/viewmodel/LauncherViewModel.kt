@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.data.AppRepository
 import com.example.data.LauncherPreferencesRepository
+import com.example.data.LauncherSettingsBackup
 import com.example.data.UniversalSearchRepository
 import com.example.model.AppActionOrigin
 import com.example.model.AppItem
@@ -1437,5 +1438,61 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 1 to page1,
             ),
         )
+    }
+
+    fun exportSettingsToUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val result = runCatching {
+                val json = prefsRepository.exportSettingsJson()
+                val out = app.contentResolver.openOutputStream(uri, "wt")
+                    ?: app.contentResolver.openOutputStream(uri)
+                    ?: error("Cannot open output stream")
+                out.use { stream ->
+                    stream.write(json.toByteArray(Charsets.UTF_8))
+                    stream.flush()
+                }
+            }
+            snackbarMessage.value = app.getString(
+                if (result.isSuccess) R.string.backup_export_success
+                else R.string.backup_export_error
+            )
+        }
+    }
+
+    fun importSettingsFromUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val parsed = runCatching {
+                val input = app.contentResolver.openInputStream(uri)
+                    ?: error("Cannot open input stream")
+                val bytes = input.use { stream ->
+                    val buffer = ByteArray(8 * 1024)
+                    val out = java.io.ByteArrayOutputStream()
+                    var total = 0
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read <= 0) break
+                        total += read
+                        if (total > LauncherSettingsBackup.MAX_BACKUP_BYTES) {
+                            error("Backup file too large")
+                        }
+                        out.write(buffer, 0, read)
+                    }
+                    out.toByteArray()
+                }
+                LauncherSettingsBackup.deserialize(bytes.toString(Charsets.UTF_8)).getOrThrow()
+            }
+
+            val restored = parsed.getOrNull()
+            if (restored == null) {
+                snackbarMessage.value = app.getString(R.string.backup_import_invalid)
+                return@launch
+            }
+
+            prefsRepository.restoreSettings(restored)
+            currentHomePage.value = currentHomePage.value.coerceIn(0, (restored.homePageCount - 1).coerceAtLeast(0))
+            snackbarMessage.value = app.getString(R.string.backup_import_success)
+        }
     }
 }

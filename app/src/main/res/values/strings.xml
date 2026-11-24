@@ -198,4 +198,18 @@
     <string name="search_open_contact_error">Unable to open contact</string>
     <string name="search_open_file_error">No app available to open this file</string>
     <string name="search_third_party_error">Unable to open search in this app</string>
+
+    <!-- Backup & Restore -->
+    <string name="settings_backup_section">Backup &amp; restore</string>
+    <string name="settings_backup_export">Export settings</string>
+    <string name="settings_backup_export_desc">Save layout, gestures, and tabs to a file</string>
+    <string name="settings_backup_import">Restore settings</string>
+    <string name="settings_backup_import_desc">Import a previously exported backup file</string>
+    <string name="backup_restore_confirm_title">Restore settings?</string>
+    <string name="backup_restore_confirm_message">This will replace your current Home layout, Dock, gestures, and drawer tabs.</string>
+    <string name="backup_restore_confirm_action">Restore</string>
+    <string name="backup_export_success">Settings exported</string>
+    <string name="backup_export_error">Unable to export settings</string>
+    <string name="backup_import_success">Settings restored</string>
+    <string name="backup_import_invalid">Invalid backup file</string>
 </resources>

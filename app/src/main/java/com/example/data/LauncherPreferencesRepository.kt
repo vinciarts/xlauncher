@@ -20,6 +20,7 @@ import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
@@ -1118,6 +1119,43 @@ class LauncherPreferencesRepository(private val context: Context) {
                 current.remove(packageName)
             }
             prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES] = encodeEncodedList(current)
+        }
+    }
+
+    suspend fun exportSettingsJson(): String {
+        val snapshot = settingsFlow.first()
+        return LauncherSettingsBackup.serialize(snapshot)
+    }
+
+    suspend fun restoreSettings(restored: RestoredLauncherSettings) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.HOME_PAGE_COUNT] = restored.homePageCount
+            prefs[Keys.HOME_LOOP_PAGING] = restored.homeLoopPaging
+            prefs[Keys.HOME_GRID_COLUMNS] = restored.homeGridColumns
+            prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(restored.placedHomeApps)
+
+            val legacyPages = restored.placedHomeApps
+                .groupBy { it.pageIndex }
+                .mapValues { (_, list) -> list.map { it.componentKey }.distinct() }
+            prefs[Keys.HOME_PAGES_DATA] = encodeHomePages(legacyPages)
+
+            prefs[Keys.DOCK_KEYS] = encodeList(restored.dockKeys)
+            prefs[Keys.DOCK_GESTURES] = encodeAppGestures(restored.appGestures)
+
+            prefs[Keys.HOME_GESTURE_UP] = (restored.homeGestures[SwipeDirection.UP] ?: HomeGestureAction.None).encode()
+            prefs[Keys.HOME_GESTURE_DOWN] = (restored.homeGestures[SwipeDirection.DOWN] ?: HomeGestureAction.None).encode()
+            prefs[Keys.HOME_GESTURE_LEFT] = (restored.homeGestures[SwipeDirection.LEFT] ?: HomeGestureAction.None).encode()
+            prefs[Keys.HOME_GESTURE_RIGHT] = (restored.homeGestures[SwipeDirection.RIGHT] ?: HomeGestureAction.None).encode()
+            prefs[Keys.HOME_BUTTON_ACTION] = restored.homeButtonAction.encode()
+
+            prefs[Keys.DRAWER_COLUMNS] = restored.drawerColumns
+            prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(restored.drawerTabs)
+            prefs[Keys.ALL_TAB_HIDDEN] = restored.isAllTabHidden
+            prefs[Keys.HAS_SEEDED_DEFAULTS] = true
+
+            prefs[Keys.SEARCH_SHORTCUTS_ENABLED] = restored.searchShortcutsEnabled
+            prefs[Keys.SEARCH_CONTACTS_ENABLED] = restored.searchContactsEnabled
+            prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES] = encodeEncodedList(restored.searchThirdPartyPackages)
         }
     }
 

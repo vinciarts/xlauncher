@@ -567,6 +567,8 @@ private fun LauncherRoot(
                     onAddSearchFileFolder = viewModel::addSearchFileFolder,
                     onRemoveSearchFileFolder = viewModel::removeSearchFileFolder,
                     onSetSearchThirdPartyAppEnabled = viewModel::setSearchThirdPartyAppEnabled,
+                    onExportSettings = viewModel::exportSettingsToUri,
+                    onImportSettings = viewModel::importSettingsFromUri,
                 )
             }
         }

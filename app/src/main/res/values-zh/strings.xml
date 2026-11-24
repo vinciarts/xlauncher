@@ -198,4 +198,18 @@
     <string name="search_open_contact_error">无法打开该联系人</string>
     <string name="search_open_file_error">没有可打开此文件的应用</string>
     <string name="search_third_party_error">无法调起该应用的搜索页面</string>
+
+    <!-- Backup & Restore -->
+    <string name="settings_backup_section">备份与恢复</string>
+    <string name="settings_backup_export">导出设置</string>
+    <string name="settings_backup_export_desc">将桌面布局、手势与标签页保存为文件</string>
+    <string name="settings_backup_import">恢复设置</string>
+    <string name="settings_backup_import_desc">从已导出的备份文件恢复设置</string>
+    <string name="backup_restore_confirm_title">恢复设置？</string>
+    <string name="backup_restore_confirm_message">将覆盖当前的桌面布局、Dock、手势和抽屉标签页设置。</string>
+    <string name="backup_restore_confirm_action">恢复</string>
+    <string name="backup_export_success">设置已导出</string>
+    <string name="backup_export_error">导出设置失败</string>
+    <string name="backup_import_success">设置已恢复</string>
+    <string name="backup_import_invalid">无效的备份文件</string>
 </resources>

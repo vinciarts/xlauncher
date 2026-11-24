@@ -29,9 +29,12 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Contacts
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.LauncherPreferencesRepository
+import com.example.data.LauncherSettingsBackup
 import com.example.model.HomeGestureAction
 import com.example.model.LauncherUiState
 import com.example.model.SwipeDirection
@@ -113,6 +117,8 @@ fun SettingsScreen(
     onAddSearchFileFolder: (Uri) -> Unit,
     onRemoveSearchFileFolder: (String) -> Unit,
     onSetSearchThirdPartyAppEnabled: (String, Boolean) -> Unit,
+    onExportSettings: (Uri) -> Unit,
+    onImportSettings: (Uri) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onBack)
@@ -124,6 +130,7 @@ fun SettingsScreen(
     var showCreateTabDialog by remember { mutableStateOf(false) }
     var editingTabId by remember { mutableStateOf<String?>(null) }
     var showSearchFoldersDialog by remember { mutableStateOf(false) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     var providerFilterQuery by remember { mutableStateOf("") }
     val segmentedColors = ListItemDefaults.segmentedColors()
 
@@ -142,6 +149,22 @@ fun SettingsScreen(
     ) { treeUri ->
         if (treeUri != null) {
             onAddSearchFileFolder(treeUri)
+        }
+    }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            onExportSettings(uri)
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            pendingRestoreUri = uri
         }
     }
 
@@ -766,6 +789,72 @@ fun SettingsScreen(
                         }
                     }
                 }
+
+                // Backup & Restore Section
+                item(key = "backup_section") {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        ExpressiveSectionHeader(title = stringResource(R.string.settings_backup_section))
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            SegmentedListItem(
+                                onClick = {
+                                    exportBackupLauncher.launch(LauncherSettingsBackup.defaultFileName())
+                                },
+                                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 2),
+                                colors = segmentedColors,
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Upload,
+                                        contentDescription = null,
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(text = stringResource(R.string.settings_backup_export_desc))
+                                },
+                                trailingContent = {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                        contentDescription = null,
+                                    )
+                                },
+                                modifier = Modifier.testTag("settings_export_backup"),
+                                content = {
+                                    Text(text = stringResource(R.string.settings_backup_export))
+                                },
+                            )
+                            SegmentedListItem(
+                                onClick = {
+                                    importBackupLauncher.launch(
+                                        arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")
+                                    )
+                                },
+                                shapes = ListItemDefaults.segmentedShapes(index = 1, count = 2),
+                                colors = segmentedColors,
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = null,
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(text = stringResource(R.string.settings_backup_import_desc))
+                                },
+                                trailingContent = {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                        contentDescription = null,
+                                    )
+                                },
+                                modifier = Modifier.testTag("settings_import_backup"),
+                                content = {
+                                    Text(text = stringResource(R.string.settings_backup_import))
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -847,6 +936,38 @@ fun SettingsScreen(
             onAddFolder = { folderPickerLauncher.launch(null) },
             onRemoveFolder = onRemoveSearchFileFolder,
             onDismiss = { showSearchFoldersDialog = false },
+        )
+    }
+
+    val restoreUri = pendingRestoreUri
+    if (restoreUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingRestoreUri = null },
+            title = {
+                Text(text = stringResource(R.string.backup_restore_confirm_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.backup_restore_confirm_message))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRestoreUri = null
+                        onImportSettings(restoreUri)
+                    },
+                    modifier = Modifier.testTag("confirm_restore_backup"),
+                ) {
+                    Text(text = stringResource(R.string.backup_restore_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingRestoreUri = null },
+                    modifier = Modifier.testTag("cancel_restore_backup"),
+                ) {
+                    Text(text = stringResource(R.string.dialog_cancel))
+                }
+            },
         )
     }
 }
