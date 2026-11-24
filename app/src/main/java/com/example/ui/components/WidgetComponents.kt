@@ -12,12 +12,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.LastPage
 import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FirstPage
-import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -222,41 +221,22 @@ fun WidgetContextMenuDropdown(
                     )
                 )
             }
-            add(
-                ExpressiveMenuItemSpec(
-                    text = {
-                        Text(
-                            text = stringResource(
-                                if (canResize) R.string.widget_menu_resize else R.string.widget_menu_move_position
-                            )
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (canResize) Icons.Rounded.AspectRatio else Icons.Rounded.OpenWith,
-                            contentDescription = null,
-                        )
-                    },
-                    testTag = "widget_menu_resize",
-                    onClick = { host.onResize(widget) },
+            if (canResize) {
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.widget_menu_resize)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.AspectRatio, contentDescription = null) },
+                        testTag = "widget_menu_resize",
+                        onClick = { host.onResize(widget) },
+                    )
                 )
-            )
-            add(
-                ExpressiveMenuItemSpec(
-                    text = { Text(text = stringResource(R.string.widget_menu_move_page)) },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null)
-                    },
-                    testTag = "widget_menu_move_page",
-                    onClick = { host.onMovePage(widget) },
-                )
-            )
+            }
         }
 
         val removeGroup = listOf(
             ExpressiveMenuItemSpec(
                 text = { Text(text = stringResource(R.string.widget_menu_remove)) },
-                leadingIcon = { Icon(imageVector = Icons.Rounded.DeleteOutline, contentDescription = null) },
+                leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
                 colors = errorItemColors,
                 testTag = "widget_menu_remove",
                 onClick = { host.onRemove(widget) },

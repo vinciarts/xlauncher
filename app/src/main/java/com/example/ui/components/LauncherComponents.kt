@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowRight
-import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dock
 import androidx.compose.material.icons.rounded.Home
@@ -431,7 +431,6 @@ fun AppIconTile(
                 pointerIdHolder.id?.let { id ->
                     currentOnDownPointer?.invoke(id, SwipeDirection.entries.toSet())
                 }
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 currentOnLongClick()
             },
         )
@@ -784,29 +783,21 @@ fun AppContextMenuDropdown(
                 AppActionOrigin.HOME -> {
                     add(
                         ExpressiveMenuItemSpec(
-                            text = { Text(text = stringResource(R.string.action_move_home_page)) },
-                            leadingIcon = {
-                                Icon(imageVector = Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null)
-                            },
-                            testTag = "menu_move_home_page",
-                            onClick = {
-                                host.onOpenMovePage(
-                                    AppMenuTarget(
-                                        app = app,
-                                        origin = origin,
-                                        sourcePageIndex = sourcePageIndex,
-                                        shortcuts = appOwnShortcuts,
-                                    )
-                                )
-                            },
+                            text = { Text(text = stringResource(R.string.action_unpin_home)) },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
+                            testTag = "menu_unpin_home",
+                            onClick = { host.onRemoveFromHomePage(app, sourcePageIndex) },
                         )
                     )
+                }
+
+                AppActionOrigin.DOCK -> {
                     add(
                         ExpressiveMenuItemSpec(
                             text = { Text(text = stringResource(R.string.action_unpin_home)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
-                            testTag = "menu_unpin_home",
-                            onClick = { host.onRemoveFromHomePage(app, sourcePageIndex) },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
+                            testTag = "menu_toggle_dock",
+                            onClick = { host.onTogglePinDock(app) },
                         )
                     )
                 }
@@ -822,6 +813,20 @@ fun AppContextMenuDropdown(
                     )
                     add(
                         ExpressiveMenuItemSpec(
+                            text = {
+                                Text(
+                                    text = stringResource(
+                                        if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
+                                    )
+                                )
+                            },
+                            leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
+                            testTag = "menu_toggle_dock",
+                            onClick = { host.onTogglePinDock(app) },
+                        )
+                    )
+                    add(
+                        ExpressiveMenuItemSpec(
                             text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
                             leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
                             testTag = "menu_drawer_tabs",
@@ -829,24 +834,7 @@ fun AppContextMenuDropdown(
                         )
                     )
                 }
-
-                AppActionOrigin.DOCK -> Unit
             }
-
-            add(
-                ExpressiveMenuItemSpec(
-                    text = {
-                        Text(
-                            text = stringResource(
-                                if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
-                            )
-                        )
-                    },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
-                    testTag = "menu_toggle_dock",
-                    onClick = { host.onTogglePinDock(app) },
-                )
-            )
         }
 
         val systemGroup = buildList {
