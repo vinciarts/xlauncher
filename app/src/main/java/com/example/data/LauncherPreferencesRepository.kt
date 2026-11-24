@@ -16,6 +16,7 @@ import com.example.model.LauncherSettings
 import com.example.model.PlacedHomeApp
 import com.example.model.PlacedWidget
 import com.example.model.SwipeDirection
+import com.example.model.WebSearchEngine
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
@@ -54,6 +55,9 @@ class LauncherPreferencesRepository(private val context: Context) {
         val SEARCH_FILES_ENABLED = booleanPreferencesKey("search_files_enabled")
         val SEARCH_FILE_TREE_URIS = stringPreferencesKey("search_file_tree_uris")
         val SEARCH_THIRD_PARTY_PACKAGES = stringPreferencesKey("search_third_party_packages")
+        val SEARCH_THIRD_PARTY_APPS_ENABLED = booleanPreferencesKey("search_third_party_apps_enabled")
+        val SEARCH_WEB_ENABLED = booleanPreferencesKey("search_web_enabled")
+        val SEARCH_WEB_ENGINE = stringPreferencesKey("search_web_engine")
     }
 
     val settingsFlow: Flow<LauncherSettings> = context.launcherDataStore.data.map { prefs ->
@@ -89,7 +93,10 @@ class LauncherPreferencesRepository(private val context: Context) {
             searchContactsEnabled = prefs[Keys.SEARCH_CONTACTS_ENABLED] ?: false,
             searchFilesEnabled = prefs[Keys.SEARCH_FILES_ENABLED] ?: false,
             searchFileTreeUris = decodeEncodedList(prefs[Keys.SEARCH_FILE_TREE_URIS]).toImmutableList(),
-            searchThirdPartyPackages = decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).toImmutableList(),
+            searchThirdPartyAppsEnabled = prefs[Keys.SEARCH_THIRD_PARTY_APPS_ENABLED]
+                ?: decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).isNotEmpty(),
+            searchWebEnabled = prefs[Keys.SEARCH_WEB_ENABLED] ?: true,
+            searchWebEngine = WebSearchEngine.decode(prefs[Keys.SEARCH_WEB_ENGINE]),
         )
     }
 
@@ -1209,16 +1216,21 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun setSearchThirdPartyAppEnabled(packageName: String, enabled: Boolean) {
-        if (packageName.isBlank()) return
+    suspend fun setSearchThirdPartyAppsEnabled(enabled: Boolean) {
         context.launcherDataStore.edit { prefs ->
-            val current = decodeEncodedList(prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES]).toMutableList()
-            if (enabled) {
-                if (packageName !in current) current.add(packageName)
-            } else {
-                current.remove(packageName)
-            }
-            prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES] = encodeEncodedList(current)
+            prefs[Keys.SEARCH_THIRD_PARTY_APPS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSearchWebEnabled(enabled: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SEARCH_WEB_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSearchWebEngine(engine: WebSearchEngine) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.SEARCH_WEB_ENGINE] = engine.id
         }
     }
 
@@ -1256,7 +1268,9 @@ class LauncherPreferencesRepository(private val context: Context) {
 
             prefs[Keys.SEARCH_SHORTCUTS_ENABLED] = restored.searchShortcutsEnabled
             prefs[Keys.SEARCH_CONTACTS_ENABLED] = restored.searchContactsEnabled
-            prefs[Keys.SEARCH_THIRD_PARTY_PACKAGES] = encodeEncodedList(restored.searchThirdPartyPackages)
+            prefs[Keys.SEARCH_THIRD_PARTY_APPS_ENABLED] = restored.searchThirdPartyAppsEnabled
+            prefs[Keys.SEARCH_WEB_ENABLED] = restored.searchWebEnabled
+            prefs[Keys.SEARCH_WEB_ENGINE] = restored.searchWebEngine.id
         }
     }
 

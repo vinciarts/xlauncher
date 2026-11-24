@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoFile
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -47,6 +48,7 @@ import com.example.model.AppShortcutItem
 import com.example.model.ContactSearchResult
 import com.example.model.FileSearchResult
 import com.example.model.SearchProviderApp
+import com.example.model.WebSearchEngine
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentSetOf
 
@@ -66,6 +68,8 @@ fun DrawerUniversalSearchResults(
     contacts: ImmutableList<ContactSearchResult>,
     files: ImmutableList<FileSearchResult>,
     searchProviders: ImmutableList<SearchProviderApp>,
+    searchWebEnabled: Boolean,
+    searchWebEngine: WebSearchEngine,
     appMenuHost: AppContextMenuHost,
     onAppClick: (AppItem) -> Unit,
     onLaunchShortcut: (AppShortcutItem) -> Unit,
@@ -73,13 +77,15 @@ fun DrawerUniversalSearchResults(
     onDialContact: (String) -> Unit,
     onOpenFile: (FileSearchResult) -> Unit,
     onLaunchThirdPartySearch: (SearchProviderApp, String) -> Unit,
+    onLaunchWebSearch: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val trimmedQuery = query.trim()
     val hasExtraResults = shortcuts.isNotEmpty() ||
         contacts.isNotEmpty() ||
         files.isNotEmpty() ||
-        searchProviders.isNotEmpty()
+        searchProviders.isNotEmpty() ||
+        (searchWebEnabled && trimmedQuery.isNotEmpty())
 
     if (apps.isEmpty() && !hasExtraResults) {
         Box(
@@ -296,6 +302,54 @@ fun DrawerUniversalSearchResults(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        if (searchWebEnabled && trimmedQuery.isNotEmpty()) {
+            item(
+                key = "search_section_web",
+                span = { GridItemSpan(maxLineSpan) },
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ExpressiveSectionHeader(
+                        title = stringResource(R.string.search_section_web),
+                    )
+                    SegmentedListItem(
+                        onClick = { onLaunchWebSearch(trimmedQuery) },
+                        shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                        colors = segmentedColors,
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Rounded.Public,
+                                contentDescription = null,
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(
+                                    R.string.search_web_subtitle,
+                                    searchWebEngine.label,
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        trailingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                contentDescription = null,
+                            )
+                        },
+                        modifier = Modifier.testTag("search_web_action"),
+                        content = {
+                            Text(
+                                text = stringResource(R.string.search_web_item_title, trimmedQuery),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
                 }
             }
         }

@@ -31,6 +31,23 @@ enum class LauncherDestination {
     WIDGET_PICKER,
 }
 
+enum class WebSearchEngine(
+    val id: String,
+    val label: String,
+    val searchUrlPrefix: String,
+) {
+    GOOGLE("google", "Google", "https://www.google.com/search?q="),
+    BING("bing", "Bing", "https://www.bing.com/search?q="),
+    DUCKDUCKGO("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q="),
+    BAIDU("baidu", "Baidu", "https://www.baidu.com/s?wd="),
+    ;
+
+    companion object {
+        fun decode(raw: String?): WebSearchEngine =
+            entries.firstOrNull { it.id.equals(raw?.trim(), ignoreCase = true) } ?: GOOGLE
+    }
+}
+
 enum class HomePageCommandType {
     FIRST_PAGE,
     PREV_PAGE,
@@ -338,18 +355,21 @@ data class LauncherSettings(
     val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,
     val hasSeededDefaults: Boolean = false,
-    // Opt-in Universal Search sources (ALL off by default to keep search noise-free)
+    // Opt-in Universal Search sources (local sources off by default; web search enabled by default)
     val searchShortcutsEnabled: Boolean = false,
     val searchContactsEnabled: Boolean = false,
     val searchFilesEnabled: Boolean = false,
     val searchFileTreeUris: ImmutableList<String> = persistentListOf(),
-    val searchThirdPartyPackages: ImmutableList<String> = persistentListOf(),
+    val searchThirdPartyAppsEnabled: Boolean = false,
+    val searchWebEnabled: Boolean = true,
+    val searchWebEngine: WebSearchEngine = WebSearchEngine.GOOGLE,
 ) {
     val hasAnyExtraSearchEnabled: Boolean
         get() = searchShortcutsEnabled ||
             searchContactsEnabled ||
             (searchFilesEnabled && searchFileTreeUris.isNotEmpty()) ||
-            searchThirdPartyPackages.isNotEmpty()
+            searchThirdPartyAppsEnabled ||
+            searchWebEnabled
 
     companion object {
         fun defaultHomeGestures(): ImmutableMap<SwipeDirection, HomeGestureAction> = persistentMapOf(

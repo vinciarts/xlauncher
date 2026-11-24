@@ -103,6 +103,8 @@ fun AppDrawerScreen(
     matchedContacts: ImmutableList<ContactSearchResult>,
     matchedFiles: ImmutableList<FileSearchResult>,
     activeSearchProviders: ImmutableList<SearchProviderApp>,
+    searchWebEnabled: Boolean,
+    searchWebEngine: com.example.model.WebSearchEngine,
     drawerSearchQuery: String,
     autoFocusDrawerSearch: Boolean,
     drawerColumns: Int,
@@ -115,6 +117,7 @@ fun AppDrawerScreen(
     onDialContact: (String) -> Unit,
     onOpenFile: (FileSearchResult) -> Unit,
     onLaunchThirdPartySearch: (SearchProviderApp, String) -> Unit,
+    onLaunchWebSearch: (String) -> Unit,
     appMenuHost: AppContextMenuHost,
     onCreateTab: (String, List<String>) -> Unit,
     onRenameTab: (String, String) -> Unit,
@@ -368,6 +371,8 @@ fun AppDrawerScreen(
                         contacts = matchedContacts,
                         files = matchedFiles,
                         searchProviders = activeSearchProviders,
+                        searchWebEnabled = searchWebEnabled,
+                        searchWebEngine = searchWebEngine,
                         appMenuHost = appMenuHost,
                         onAppClick = onAppClick,
                         onLaunchShortcut = onLaunchShortcut,
@@ -375,6 +380,7 @@ fun AppDrawerScreen(
                         onDialContact = onDialContact,
                         onOpenFile = onOpenFile,
                         onLaunchThirdPartySearch = onLaunchThirdPartySearch,
+                        onLaunchWebSearch = onLaunchWebSearch,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),

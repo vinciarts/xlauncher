@@ -6,6 +6,7 @@ import com.example.model.HomeGridEngine
 import com.example.model.LauncherSettings
 import com.example.model.PlacedHomeApp
 import com.example.model.SwipeDirection
+import com.example.model.WebSearchEngine
 import kotlinx.collections.immutable.toImmutableList
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,7 +33,9 @@ data class RestoredLauncherSettings(
     val isAllTabHidden: Boolean,
     val searchShortcutsEnabled: Boolean,
     val searchContactsEnabled: Boolean,
-    val searchThirdPartyPackages: List<String>,
+    val searchThirdPartyAppsEnabled: Boolean,
+    val searchWebEnabled: Boolean,
+    val searchWebEngine: WebSearchEngine,
 )
 
 object LauncherSettingsBackup {
@@ -117,9 +120,9 @@ object LauncherSettingsBackup {
         // Search preferences (device-bound SAF folder grants are intentionally excluded)
         root.put("searchShortcutsEnabled", settings.searchShortcutsEnabled)
         root.put("searchContactsEnabled", settings.searchContactsEnabled)
-        val thirdPartyArr = JSONArray()
-        settings.searchThirdPartyPackages.forEach { thirdPartyArr.put(it) }
-        root.put("searchThirdPartyPackages", thirdPartyArr)
+        root.put("searchThirdPartyAppsEnabled", settings.searchThirdPartyAppsEnabled)
+        root.put("searchWebEnabled", settings.searchWebEnabled)
+        root.put("searchWebEngine", settings.searchWebEngine.id)
 
         return root.toString(2)
     }
@@ -261,16 +264,15 @@ object LauncherSettingsBackup {
 
         val searchShortcutsEnabled = root.optBoolean("searchShortcutsEnabled", false)
         val searchContactsEnabled = root.optBoolean("searchContactsEnabled", false)
-        val searchThirdPartyPackages = mutableListOf<String>()
-        val thirdPartyArr = root.optJSONArray("searchThirdPartyPackages")
-        if (thirdPartyArr != null) {
-            for (i in 0 until thirdPartyArr.length()) {
-                val pkg = thirdPartyArr.optString(i, "").trim()
-                if (pkg.isNotEmpty() && pkg !in searchThirdPartyPackages) {
-                    searchThirdPartyPackages.add(pkg)
-                }
-            }
+        val legacyThirdPartyArr = root.optJSONArray("searchThirdPartyPackages")
+        val hasLegacyThirdParty = legacyThirdPartyArr != null && legacyThirdPartyArr.length() > 0
+        val searchThirdPartyAppsEnabled = if (root.has("searchThirdPartyAppsEnabled")) {
+            root.optBoolean("searchThirdPartyAppsEnabled", false)
+        } else {
+            hasLegacyThirdParty
         }
+        val searchWebEnabled = root.optBoolean("searchWebEnabled", true)
+        val searchWebEngine = WebSearchEngine.decode(root.optString("searchWebEngine", ""))
 
         RestoredLauncherSettings(
             homePageCount = homePageCount,
@@ -287,7 +289,9 @@ object LauncherSettingsBackup {
             isAllTabHidden = isAllTabHidden,
             searchShortcutsEnabled = searchShortcutsEnabled,
             searchContactsEnabled = searchContactsEnabled,
-            searchThirdPartyPackages = searchThirdPartyPackages,
+            searchThirdPartyAppsEnabled = searchThirdPartyAppsEnabled,
+            searchWebEnabled = searchWebEnabled,
+            searchWebEngine = searchWebEngine,
         )
     }
 }

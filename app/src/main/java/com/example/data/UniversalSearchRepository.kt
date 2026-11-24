@@ -19,6 +19,7 @@ import com.example.model.ContactSearchResult
 import com.example.model.FileSearchResult
 import com.example.model.IndexedFolderInfo
 import com.example.model.SearchProviderApp
+import com.example.model.WebSearchEngine
 import com.example.search.PinyinSearchEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -366,6 +367,19 @@ class UniversalSearchRepository(private val context: Context) {
         val sorted = byPackage.values.sortedWith { a, b -> collator.compare(a.label, b.label) }
         PinyinSearchEngine.prewarm(sorted.map { it.label })
         sorted
+    }
+
+    fun launchWebSearch(query: String, engine: WebSearchEngine): Boolean {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return false
+        return runCatching {
+            val uri = Uri.parse("${engine.searchUrlPrefix}${Uri.encode(trimmed)}")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     fun launchThirdPartySearch(provider: SearchProviderApp, query: String): Boolean {

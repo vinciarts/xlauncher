@@ -97,7 +97,9 @@ fun SettingsScreen(
     onSetSearchFilesEnabled: (Boolean) -> Unit,
     onAddSearchFileFolder: (Uri) -> Unit,
     onRemoveSearchFileFolder: (String) -> Unit,
-    onSetSearchThirdPartyAppEnabled: (String, Boolean) -> Unit,
+    onSetSearchThirdPartyAppsEnabled: (Boolean) -> Unit,
+    onSetSearchWebEnabled: (Boolean) -> Unit,
+    onSetSearchWebEngine: (com.example.model.WebSearchEngine) -> Unit,
     onExportSettings: (Uri) -> Unit,
     onImportSettings: (Uri) -> Unit,
     modifier: Modifier = Modifier,
@@ -112,7 +114,6 @@ fun SettingsScreen(
     var editingTabId by remember { mutableStateOf<String?>(null) }
     var showSearchFoldersDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
-    var providerFilterQuery by remember { mutableStateOf("") }
     val pagerState = rememberPagerState(pageCount = { SettingsTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
     val segmentedColors = ListItemDefaults.segmentedColors()
@@ -268,8 +269,6 @@ fun SettingsScreen(
                             context = context,
                             uiState = uiState,
                             segmentedColors = segmentedColors,
-                            providerFilterQuery = providerFilterQuery,
-                            onProviderFilterQueryChange = { providerFilterQuery = it },
                             onSetSearchShortcutsEnabled = onSetSearchShortcutsEnabled,
                             onSetSearchContactsEnabled = onSetSearchContactsEnabled,
                             onRequestContactsPermission = {
@@ -278,7 +277,9 @@ fun SettingsScreen(
                             onSetSearchFilesEnabled = onSetSearchFilesEnabled,
                             onOpenFolderPicker = { folderPickerLauncher.launch(null) },
                             onOpenSearchFoldersDialog = { showSearchFoldersDialog = true },
-                            onSetSearchThirdPartyAppEnabled = onSetSearchThirdPartyAppEnabled,
+                            onSetSearchThirdPartyAppsEnabled = onSetSearchThirdPartyAppsEnabled,
+                            onSetSearchWebEnabled = onSetSearchWebEnabled,
+                            onSetSearchWebEngine = onSetSearchWebEngine,
                         )
                     }
                 }

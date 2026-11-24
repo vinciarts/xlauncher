@@ -31,6 +31,7 @@ import com.example.model.LauncherUiState
 import com.example.model.PlacedWidget
 import com.example.model.SearchProviderApp
 import com.example.model.SwipeDirection
+import com.example.model.WebSearchEngine
 import com.example.search.PinyinSearchEngine
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
@@ -324,11 +325,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             persistentListOf()
         }
 
-        val activeSearchProviders = if (trimmed.isNotEmpty() && settings.searchThirdPartyPackages.isNotEmpty()) {
-            val allowed = settings.searchThirdPartyPackages.toSet()
-            searchCache.providers
-                .filter { it.packageName in allowed }
-                .toImmutableList()
+        val activeSearchProviders = if (trimmed.isNotEmpty() && settings.searchThirdPartyAppsEnabled) {
+            searchCache.providers.toImmutableList()
         } else {
             persistentListOf()
         }
@@ -1361,9 +1359,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setSearchThirdPartyAppEnabled(packageName: String, enabled: Boolean) {
+    fun setSearchThirdPartyAppsEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            prefsRepository.setSearchThirdPartyAppEnabled(packageName, enabled)
+            prefsRepository.setSearchThirdPartyAppsEnabled(enabled)
+        }
+    }
+
+    fun setSearchWebEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setSearchWebEnabled(enabled)
+        }
+    }
+
+    fun setSearchWebEngine(engine: WebSearchEngine) {
+        viewModelScope.launch {
+            prefsRepository.setSearchWebEngine(engine)
         }
     }
 
@@ -1397,6 +1407,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         } else {
             snackbarMessage.value = getApplication<Application>().getString(R.string.search_open_file_error)
+        }
+    }
+
+    fun launchWebSearch(query: String) {
+        val engine = uiState.value.settings.searchWebEngine
+        val ok = searchRepository.launchWebSearch(query, engine)
+        if (ok) {
+            if (destination.value == LauncherDestination.DRAWER) {
+                returnHome()
+            }
+        } else {
+            snackbarMessage.value = getApplication<Application>().getString(R.string.search_web_error)
         }
     }
 

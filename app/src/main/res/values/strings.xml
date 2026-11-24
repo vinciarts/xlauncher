@@ -185,10 +185,12 @@
     <string name="settings_search_files">Local files</string>
     <string name="settings_search_files_empty">Select folders to index (zero broad storage permission)</string>
     <string name="settings_search_files_summary">%1$d folders · %2$d files indexed</string>
+    <string name="settings_search_external_section">Web &amp; external search</string>
+    <string name="settings_search_web">Web search</string>
+    <string name="settings_search_web_desc">Open queries in your default browser via %1$s</string>
+    <string name="settings_search_web_engine_label">Search engine</string>
     <string name="settings_search_third_party_section">Third-party app search</string>
-    <string name="settings_search_third_party_section_hint">Turn on individual apps that expose system search to hand off queries from the drawer.</string>
-    <string name="settings_search_app_inapp_desc">In-app search</string>
-    <string name="settings_search_app_web_desc">Web search</string>
+    <string name="settings_search_third_party_auto_desc">Automatically show %1$d installed apps that support in-app search</string>
     <string name="settings_search_third_party_none_installed">No installed apps expose search actions</string>
 
     <string name="search_folders_dialog_title">Indexed folders</string>
@@ -202,6 +204,10 @@
     <string name="search_section_shortcuts">Shortcuts</string>
     <string name="search_section_contacts">Contacts</string>
     <string name="search_section_files">Files</string>
+    <string name="search_section_web">Web search</string>
+    <string name="search_web_item_title">Search \"%1$s\" on web</string>
+    <string name="search_web_subtitle">Open in browser · %1$s</string>
+    <string name="search_web_error">No browser available to open web search</string>
     <string name="search_section_third_party">Search \"%1$s\" in apps</string>
     <string name="search_in_app_subtitle">Search in %1$s</string>
     <string name="cd_call_contact">Call contact</string>

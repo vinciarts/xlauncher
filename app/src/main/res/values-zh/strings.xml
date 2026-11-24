@@ -185,10 +185,12 @@
     <string name="settings_search_files">本地文件</string>
     <string name="settings_search_files_empty">选择要索引的文件夹（无需申请全部存储权限）</string>
     <string name="settings_search_files_summary">已授权 %1$d 个文件夹 · 索引 %2$d 个文件</string>
+    <string name="settings_search_external_section">网页与外部搜索</string>
+    <string name="settings_search_web">网页搜索</string>
+    <string name="settings_search_web_desc">使用 %1$s 在默认浏览器中搜索</string>
+    <string name="settings_search_web_engine_label">搜索引擎</string>
     <string name="settings_search_third_party_section">第三方应用搜索</string>
-    <string name="settings_search_third_party_section_hint">以下应用开放了系统搜索入口，可按应用单独开关；开启后会在抽屉搜索底部显示直达入口。</string>
-    <string name="settings_search_app_inapp_desc">应用内搜索</string>
-    <string name="settings_search_app_web_desc">网页搜索</string>
+    <string name="settings_search_third_party_auto_desc">自动显示 %1$d 个支持应用内搜索的已安装应用</string>
     <string name="settings_search_third_party_none_installed">未发现开放搜索入口的第三方应用</string>
 
     <string name="search_folders_dialog_title">已索引文件夹</string>
@@ -202,6 +204,10 @@
     <string name="search_section_shortcuts">快捷方式</string>
     <string name="search_section_contacts">联系人</string>
     <string name="search_section_files">本地文件</string>
+    <string name="search_section_web">网页搜索</string>
+    <string name="search_web_item_title">在网页中搜索「%1$s」</string>
+    <string name="search_web_subtitle">用浏览器打开 · %1$s</string>
+    <string name="search_web_error">没有可用于打开网页搜索的浏览器</string>
     <string name="search_section_third_party">在其他应用中搜索「%1$s」</string>
     <string name="search_in_app_subtitle">在 %1$s 中搜索</string>
     <string name="cd_call_contact">拨打电话</string>
