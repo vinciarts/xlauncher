@@ -54,15 +54,33 @@ class AppRepository(private val context: Context) {
         }
     }
 
-    fun registerShortcutsChangedCallback(onShortcutsChanged: (String) -> Unit) {
+    fun registerLauncherCallbacks(
+        onShortcutsChanged: (String) -> Unit,
+        onPackagesChanged: (String?) -> Unit,
+    ) {
         if (launcherAppsCallback != null) return
         val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as? LauncherApps ?: return
         val cb = object : LauncherApps.Callback() {
-            override fun onPackageRemoved(packageName: String, user: UserHandle) = Unit
-            override fun onPackageAdded(packageName: String, user: UserHandle) = Unit
-            override fun onPackageChanged(packageName: String, user: UserHandle) = Unit
-            override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = Unit
-            override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) = Unit
+            override fun onPackageRemoved(packageName: String, user: UserHandle) {
+                if (user == Process.myUserHandle()) onPackagesChanged(packageName)
+            }
+
+            override fun onPackageAdded(packageName: String, user: UserHandle) {
+                if (user == Process.myUserHandle()) onPackagesChanged(packageName)
+            }
+
+            override fun onPackageChanged(packageName: String, user: UserHandle) {
+                if (user == Process.myUserHandle()) onPackagesChanged(packageName)
+            }
+
+            override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
+                if (user == Process.myUserHandle()) onPackagesChanged(null)
+            }
+
+            override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
+                if (user == Process.myUserHandle()) onPackagesChanged(null)
+            }
+
             override fun onShortcutsChanged(
                 packageName: String,
                 shortcuts: MutableList<ShortcutInfo>,
@@ -370,12 +388,17 @@ class AppRepository(private val context: Context) {
     }
 
     fun requestUninstall(packageName: String) {
-        runCatching {
+        val launched = runCatching {
             val intent = Intent(Intent.ACTION_DELETE).apply {
-                data = Uri.parse("package:$packageName")
+                data = Uri.fromParts("package", packageName, null)
+                putExtra(Intent.EXTRA_USER, Process.myUserHandle())
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+        if (!launched) {
+            openAppInfo(packageName)
         }
     }
 

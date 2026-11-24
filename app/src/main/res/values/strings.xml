@@ -65,6 +65,7 @@
     <string name="home_gesture_group_app">Apps</string>
     <string name="home_action_none">None</string>
     <string name="home_action_none_page">Default paging</string>
+    <string name="home_gesture_paused_by_loop">%1$s · Turn off loop paging</string>
     <string name="home_action_open_drawer">Open app drawer</string>
     <string name="home_action_open_search">Search apps</string>
     <string name="home_action_open_settings">Home settings</string>

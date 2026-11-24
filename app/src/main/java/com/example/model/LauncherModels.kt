@@ -92,32 +92,37 @@ sealed class HomeGestureAction {
     }
 
     companion object {
-        /** Single source of truth for built-in Launcher action candidates. */
-        val launcherActions: List<HomeGestureAction> = listOf(
-            None,
-            OpenDrawer,
-            OpenSearch,
-            OpenSettings,
-            GoFirstPage,
-            PrevHomePage,
-            NextHomePage,
-        )
+        /** Single source of truth for built-in Launcher action candidates.
+         * Must be lazy so data object subclasses are never captured as null during superclass <clinit>. */
+        val launcherActions: List<HomeGestureAction> by lazy {
+            listOf(
+                None,
+                OpenDrawer,
+                OpenSearch,
+                OpenSettings,
+                GoFirstPage,
+                PrevHomePage,
+                NextHomePage,
+            )
+        }
 
         /** Single source of truth for System action candidates. */
-        val systemActions: List<HomeGestureAction> = listOf(
-            ExpandNotifications,
-            ExpandQuickSettings,
-            ToggleFlashlight,
-            OpenVolumePanel,
-            ToggleVibrateMode,
-            OpenVoiceAssist,
-            OpenCamera,
-            OpenDialer,
-            OpenWifiPanel,
-            OpenBluetoothSettings,
-            OpenWallpaperPicker,
-            OpenSystemSettings,
-        )
+        val systemActions: List<HomeGestureAction> by lazy {
+            listOf(
+                ExpandNotifications,
+                ExpandQuickSettings,
+                ToggleFlashlight,
+                OpenVolumePanel,
+                ToggleVibrateMode,
+                OpenVoiceAssist,
+                OpenCamera,
+                OpenDialer,
+                OpenWifiPanel,
+                OpenBluetoothSettings,
+                OpenWallpaperPicker,
+                OpenSystemSettings,
+            )
+        }
 
         fun decode(raw: String?): HomeGestureAction = when {
             raw.isNullOrBlank() || raw == "NONE" -> None

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import android.view.ViewConfiguration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -66,6 +69,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
@@ -103,6 +107,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+internal fun View.performGestureTriggerHaptic() {
+    val feedbackConstant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+    } else {
+        HapticFeedbackConstants.CLOCK_TICK
+    }
+    performHapticFeedback(feedbackConstant)
+}
 
 private class LayoutCoordsRef(var coords: LayoutCoordinates? = null)
 
@@ -208,6 +221,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
 
@@ -271,6 +285,7 @@ fun HomeScreen(
     val currentDockBounds by rememberUpdatedState(dockBounds)
     val currentDisplayedRealPage by rememberUpdatedState(displayedRealPage)
     val currentPageCount by rememberUpdatedState(pageCount)
+    val currentLoopEnabled by rememberUpdatedState(loopEnabled)
 
     fun isTemporaryNewPage(targetPage: Int): Boolean =
         targetPage == DRAG_NEW_FRONT_PAGE || targetPage >= currentPageCount
@@ -607,15 +622,17 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .onGloballyPositioned { coords -> rootCoordsRef.coords = coords }
-            // 4-direction Home desktop gesture detector using Android ViewConfiguration + VelocityTracker
-            .pointerInput(pagingTouchSlopPx, minFlingVelocityPx) {
+            // Uniform 4-direction Home desktop gesture detector: triggers cleanly once threshold is passed
+            .pointerInput(view, pagingTouchSlopPx, minFlingVelocityPx) {
                 val touchSlop = viewConfiguration.touchSlop
+                val instantTriggerPx = with(density) { 48.dp.toPx() }.coerceAtLeast(pagingTouchSlopPx)
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     if (isResizingWidget || isDraggingItem || isMenuOpen) return@awaitEachGesture
                     val velocityTracker = VelocityTracker()
                     velocityTracker.addPosition(down.uptimeMillis, down.position)
                     var claimedDir: SwipeDirection? = null
+                    var triggered = false
 
                     while (true) {
                         val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -630,16 +647,24 @@ fun HomeScreen(
                             val dir = claimedDir
                             if (dir != null) {
                                 change.consume()
-                                val velocity = velocityTracker.calculateVelocity()
-                                val primaryDist = if (dir == SwipeDirection.UP || dir == SwipeDirection.DOWN) absY else absX
-                                val directionalVelocity = when (dir) {
-                                    SwipeDirection.UP -> -velocity.y
-                                    SwipeDirection.DOWN -> velocity.y
-                                    SwipeDirection.LEFT -> -velocity.x
-                                    SwipeDirection.RIGHT -> velocity.x
-                                }
-                                if (primaryDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
-                                    currentOnHomeSwipe(dir)
+                                if (!triggered) {
+                                    val velocity = velocityTracker.calculateVelocity()
+                                    val directionalDist = when (dir) {
+                                        SwipeDirection.UP -> -totalDrag.y
+                                        SwipeDirection.DOWN -> totalDrag.y
+                                        SwipeDirection.LEFT -> -totalDrag.x
+                                        SwipeDirection.RIGHT -> totalDrag.x
+                                    }
+                                    val directionalVelocity = when (dir) {
+                                        SwipeDirection.UP -> -velocity.y
+                                        SwipeDirection.DOWN -> velocity.y
+                                        SwipeDirection.LEFT -> -velocity.x
+                                        SwipeDirection.RIGHT -> velocity.x
+                                    }
+                                    if (directionalDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
+                                        view.performGestureTriggerHaptic()
+                                        currentOnHomeSwipe(dir)
+                                    }
                                 }
                             }
                             break
@@ -652,18 +677,37 @@ fun HomeScreen(
                                 if (totalDrag.x < 0f) SwipeDirection.LEFT else SwipeDirection.RIGHT
                             }
                             val iconOwnsDir = (down.id.value == lastIconPointerId) && (dir in lastIconBoundDirs)
-                            val homeConfigured = currentHomeGestures[dir].let {
-                                it != null && it != HomeGestureAction.None
+                            val configuredAction = currentHomeGestures[dir]
+                            val homeConfigured = configuredAction != null && configuredAction != HomeGestureAction.None
+                            val safePage = currentDisplayedRealPage.coerceIn(0, currentPageCount - 1)
+                            val allowedByPagingEdge = when (dir) {
+                                SwipeDirection.LEFT -> !currentLoopEnabled && safePage == currentPageCount - 1
+                                SwipeDirection.RIGHT -> !currentLoopEnabled && safePage == 0
+                                SwipeDirection.UP, SwipeDirection.DOWN -> true
                             }
-                            if (homeConfigured && !iconOwnsDir) {
+                            if (homeConfigured && allowedByPagingEdge && !iconOwnsDir) {
                                 claimedDir = dir
                             } else {
                                 break
                             }
                         }
 
-                        if (claimedDir != null) {
+                        val dir = claimedDir
+                        if (dir != null) {
                             change.consume()
+                            if (!triggered) {
+                                val directionalDist = when (dir) {
+                                    SwipeDirection.UP -> -totalDrag.y
+                                    SwipeDirection.DOWN -> totalDrag.y
+                                    SwipeDirection.LEFT -> -totalDrag.x
+                                    SwipeDirection.RIGHT -> totalDrag.x
+                                }
+                                if (directionalDist >= instantTriggerPx) {
+                                    triggered = true
+                                    view.performGestureTriggerHaptic()
+                                    currentOnHomeSwipe(dir)
+                                }
+                            }
                         }
                     }
                 }
@@ -1461,21 +1505,7 @@ private fun HomePageContent(
                     }
                 }
 
-                pageApps.isEmpty() && pageWidgets.isEmpty() -> {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = stringResource(R.string.empty_home_page_hint),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = Color.White.copy(alpha = 0.72f),
-                                shadow = Shadow(
-                                    color = Color.Black.copy(alpha = 0.7f),
-                                    offset = Offset(0f, 1f),
-                                    blurRadius = 4f,
-                                ),
-                            ),
-                        )
-                    }
-                }
+                pageApps.isEmpty() && pageWidgets.isEmpty() -> Unit
 
                 else -> {
                     val cellHeightDp = with(density) { cellHeightPx.toDp() }

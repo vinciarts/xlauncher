@@ -305,14 +305,21 @@ fun SettingsScreen(
                         ) {
                             val directions = SwipeDirection.entries
                             val totalRows = directions.size + 1
+                            val loopBlocksEdgeGestures = settings.homeLoopPaging && settings.homePageCount > 1
                             directions.forEachIndexed { index, dir ->
                                 val action = settings.homeGestures[dir] ?: HomeGestureAction.None
-                                val actionLabel = homeGestureActionLabel(
+                                val baseLabel = homeGestureActionLabel(
                                     action = action,
                                     appsByKey = uiState.appsByKey,
                                     shortcutsByTargetKey = uiState.shortcutsByTargetKey,
                                     direction = dir,
                                 )
+                                val isHorizontal = dir == SwipeDirection.LEFT || dir == SwipeDirection.RIGHT
+                                val actionLabel = if (isHorizontal && action != HomeGestureAction.None && loopBlocksEdgeGestures) {
+                                    stringResource(R.string.home_gesture_paused_by_loop, baseLabel)
+                                } else {
+                                    baseLabel
+                                }
                                 SegmentedListItem(
                                     onClick = { editingActionTrigger = HomeActionTrigger.Swipe(dir) },
                                     shapes = ListItemDefaults.segmentedShapes(index = index, count = totalRows),

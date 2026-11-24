@@ -371,9 +371,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     )
 
     init {
-        appRepository.registerShortcutsChangedCallback { _ ->
-            reloadAllShortcuts()
-        }
+        appRepository.registerLauncherCallbacks(
+            onShortcutsChanged = { _ -> reloadAllShortcuts() },
+            onPackagesChanged = { pkg -> refreshInstalledApps(changedPackage = pkg) },
+        )
         observeSearchSourceSettings()
         refreshInstalledApps()
         refreshDefaultLauncherStatus()

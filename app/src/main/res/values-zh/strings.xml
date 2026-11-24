@@ -65,6 +65,7 @@
     <string name="home_gesture_group_app">应用</string>
     <string name="home_action_none">无动作</string>
     <string name="home_action_none_page">默认翻页</string>
+    <string name="home_gesture_paused_by_loop">%1$s · 需关闭循环翻页</string>
     <string name="home_action_open_drawer">打开应用抽屉</string>
     <string name="home_action_open_search">打开应用搜索</string>
     <string name="home_action_open_settings">打开桌面设置</string>

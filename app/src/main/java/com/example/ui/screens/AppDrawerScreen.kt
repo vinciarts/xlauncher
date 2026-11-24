@@ -57,8 +57,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -136,11 +138,14 @@ fun AppDrawerScreen(
     }
 
     val context = LocalContext.current
+    val view = LocalView.current
+    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val currentOnClose by rememberUpdatedState(onClose)
     val viewConfig = remember(context) { ViewConfiguration.get(context) }
     val pagingTouchSlopPx = viewConfig.scaledPagingTouchSlop.toFloat()
     val minFlingVelocityPx = viewConfig.scaledMinimumFlingVelocity.toFloat()
+    val instantTriggerPx = with(density) { 48.dp.toPx() }.coerceAtLeast(pagingTouchSlopPx)
 
     val pages = drawerTabPages.ifEmpty {
         persistentListOf(
@@ -161,11 +166,11 @@ fun AppDrawerScreen(
     var pendingSelectNewTabFromCount by remember { mutableStateOf<Int?>(null) }
     var lastSelectedTabId by remember { mutableStateOf(DrawerTab.ALL_TAB_ID) }
 
-    // Pull-to-close ONLY when starting already at top, evaluated on finger release (onPreFling)
-    // using the exact same ViewConfiguration distance/velocity rule as HomeScreen swipe gestures.
-    val pullFromTopDismiss = remember(pagingTouchSlopPx, minFlingVelocityPx) {
+    // Uniform one-shot pull-down-to-close matching HomeScreen swipe threshold & fling velocity.
+    val pullFromTopDismiss = remember(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
         var gestureScrolledList = false
         var accumulatedDown = 0f
+        var triggered = false
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput && available.y < 0f) {
@@ -185,19 +190,31 @@ fun AppDrawerScreen(
                     accumulatedDown = 0f
                     return Offset.Zero
                 }
-                if (!gestureScrolledList && available.y > 0f) {
+                if (!gestureScrolledList && !triggered && available.y > 0f) {
                     accumulatedDown += available.y
+                    if (accumulatedDown >= instantTriggerPx) {
+                        triggered = true
+                        accumulatedDown = 0f
+                        view.performGestureTriggerHaptic()
+                        currentOnClose()
+                        return Offset(0f, available.y)
+                    }
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
+                if (triggered) {
+                    return available
+                }
                 val cancelledByUpFling = available.y <= -minFlingVelocityPx
                 if (!gestureScrolledList &&
                     !cancelledByUpFling &&
                     (accumulatedDown >= pagingTouchSlopPx || available.y >= minFlingVelocityPx)
                 ) {
+                    triggered = true
                     accumulatedDown = 0f
+                    view.performGestureTriggerHaptic()
                     currentOnClose()
                     return available
                 }
@@ -207,9 +224,49 @@ fun AppDrawerScreen(
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 gestureScrolledList = false
                 accumulatedDown = 0f
+                triggered = false
                 return Velocity.Zero
             }
         }
+    }
+
+    val directPullDownModifier = Modifier.pointerInput(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
+        var dragY = 0f
+        var triggered = false
+        val velocityTracker = VelocityTracker()
+        detectVerticalDragGestures(
+            onDragStart = {
+                dragY = 0f
+                triggered = false
+                velocityTracker.resetTracking()
+            },
+            onDragEnd = {
+                if (!triggered) {
+                    val velocityY = velocityTracker.calculateVelocity().y
+                    if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
+                        view.performGestureTriggerHaptic()
+                        currentOnClose()
+                    }
+                }
+                dragY = 0f
+                triggered = false
+                velocityTracker.resetTracking()
+            },
+            onDragCancel = {
+                dragY = 0f
+                triggered = false
+                velocityTracker.resetTracking()
+            },
+            onVerticalDrag = { change, dragAmount ->
+                dragY += dragAmount
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                if (!triggered && dragY >= instantTriggerPx) {
+                    triggered = true
+                    view.performGestureTriggerHaptic()
+                    currentOnClose()
+                }
+            },
+        )
     }
 
     val editingTab = editingTabId?.let { id -> drawerTabs.firstOrNull { it.id == id } }
@@ -267,36 +324,11 @@ fun AppDrawerScreen(
                     .navigationBarsPadding()
                     .imePadding(),
             ) {
-                // Top search header; dragging or flinging down closes drawer
+                // Top search header; dragging or flinging down tracks finger 1:1 to close drawer
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .pointerInput(pagingTouchSlopPx, minFlingVelocityPx) {
-                            var dragY = 0f
-                            val velocityTracker = VelocityTracker()
-                            detectVerticalDragGestures(
-                                onDragStart = {
-                                    dragY = 0f
-                                    velocityTracker.resetTracking()
-                                },
-                                onDragEnd = {
-                                    val velocityY = velocityTracker.calculateVelocity().y
-                                    if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
-                                        currentOnClose()
-                                    }
-                                    dragY = 0f
-                                    velocityTracker.resetTracking()
-                                },
-                                onDragCancel = {
-                                    dragY = 0f
-                                    velocityTracker.resetTracking()
-                                },
-                                onVerticalDrag = { change, dragAmount ->
-                                    dragY += dragAmount
-                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
-                                },
-                            )
-                        },
+                        .then(directPullDownModifier),
                 ) {
                     ExpressiveSearchField(
                         query = drawerSearchQuery,
@@ -353,6 +385,7 @@ fun AppDrawerScreen(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .then(directPullDownModifier)
                                     .padding(horizontal = 32.dp),
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -389,7 +422,9 @@ fun AppDrawerScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(directPullDownModifier),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
