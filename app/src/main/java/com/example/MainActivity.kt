@@ -282,7 +282,8 @@ class MainActivity : ComponentActivity() {
         targetPage: Int,
     ) {
         val cols = viewModel.uiState.value.settings.homeGridColumns
-        val (spanX, spanY) = widgetHostController.computeDefaultSpan(info, cols)
+        val rows = viewModel.uiState.value.settings.homeGridRows
+        val (spanX, spanY) = widgetHostController.computeDefaultSpan(info, cols, rows)
         viewModel.addPlacedWidget(
             PlacedWidget(
                 appWidgetId = appWidgetId,
@@ -354,10 +355,13 @@ private fun LauncherRoot(
     var widgetCatalog by remember { mutableStateOf<List<WidgetCatalogItem>>(emptyList()) }
     var isLoadingWidgets by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isWidgetPickerOpen, uiState.settings.homeGridColumns) {
+    LaunchedEffect(isWidgetPickerOpen, uiState.settings.homeGridColumns, uiState.settings.homeGridRows) {
         if (isWidgetPickerOpen) {
             isLoadingWidgets = true
-            widgetCatalog = widgetHostController.loadWidgetCatalog(uiState.settings.homeGridColumns)
+            widgetCatalog = widgetHostController.loadWidgetCatalog(
+                uiState.settings.homeGridColumns,
+                uiState.settings.homeGridRows,
+            )
             isLoadingWidgets = false
         }
     }
@@ -438,11 +442,13 @@ private fun LauncherRoot(
             appGestures = uiState.settings.appGestures,
             homeGestures = uiState.settings.homeGestures,
             homeGridColumns = uiState.settings.homeGridColumns,
+            homeGridRows = uiState.settings.homeGridRows,
             homeLoopPaging = uiState.settings.homeLoopPaging,
             maxHomePages = LauncherPreferencesRepository.MAX_HOME_PAGES,
             maxDockItems = LauncherPreferencesRepository.MAX_DOCK_ITEMS,
             currentHomePage = uiState.currentHomePage,
             homePageCommand = uiState.homePageCommand,
+            isHomeEditMode = uiState.isHomeEditMode,
             resizingWidgetId = uiState.resizingWidgetId,
             widgetHostController = widgetHostController,
             appMenuHost = appMenuHost,
@@ -452,7 +458,9 @@ private fun LauncherRoot(
             onAppClick = viewModel::launchApp,
             onAppSwipe = viewModel::onAppSwiped,
             onResizeWidget = viewModel::resizeWidget,
+            onSelectEditWidget = viewModel::selectEditWidget,
             onDismissResizeWidget = viewModel::dismissResizeWidget,
+            onExitHomeEditMode = viewModel::exitHomeEditMode,
             onMoveHomeAppToCell = viewModel::moveHomeAppToCell,
             onMoveWidgetToCell = viewModel::moveWidgetToCell,
             onMoveHomeAppToNewPage = viewModel::moveHomeAppToNewPage,
@@ -461,13 +469,19 @@ private fun LauncherRoot(
             onMoveDockAppToHomeCell = viewModel::moveDockAppToHomeCell,
             onMoveDockAppToNewPage = viewModel::moveDockAppToNewPage,
             onMoveHomeAppToDock = viewModel::moveHomeAppToDock,
+            onRemoveHomeApp = viewModel::removeHomeAppByKey,
+            onRemoveDockApp = viewModel::removeDockAppByKey,
+            onRemoveWidget = onDeleteWidget,
             onHomeSwipe = viewModel::onHomeSwiped,
             onEmptyLongPress = viewModel::openHomeEmptyMenu,
             onEmptyMenuAddWidget = { viewModel.openWidgetPicker() },
             onEmptyMenuOpenWallpaper = viewModel::openWallpaperPicker,
+            onEmptyMenuEditLayout = viewModel::enterHomeEditMode,
             onEmptyMenuOpenSettings = viewModel::openSettings,
             onEmptyMenuAddPageAtStart = viewModel::insertHomePageAtStart,
             onEmptyMenuAddPageAtEnd = viewModel::appendHomePageAtEnd,
+            onEmptyMenuMovePageLeft = { viewModel.moveCurrentHomePage(-1) },
+            onEmptyMenuMovePageRight = { viewModel.moveCurrentHomePage(1) },
             onEmptyMenuDeleteCurrentPage = {
                 viewModel.deleteCurrentHomePage { removedIds ->
                     removedIds.forEach { widgetId -> widgetHostController.deleteWidget(widgetId) }
@@ -547,9 +561,9 @@ private fun LauncherRoot(
                     uiState = uiState,
                     onBack = { viewModel.returnHome() },
                     onOpenDefaultHomeSettings = viewModel::openDefaultHomeSettings,
-                    onSetHomePageCount = viewModel::setHomePageCount,
                     onSetHomeLoopPaging = viewModel::setHomeLoopPaging,
                     onSetHomeGridColumns = viewModel::setHomeGridColumns,
+                    onSetHomeGridRows = viewModel::setHomeGridRows,
                     onSetHomeGesture = viewModel::setHomeGesture,
                     onSetHomeButtonAction = viewModel::setHomeButtonAction,
                     onSetDrawerColumns = viewModel::setDrawerColumns,

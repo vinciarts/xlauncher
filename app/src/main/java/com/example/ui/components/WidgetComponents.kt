@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.LastPage
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FirstPage
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
@@ -73,12 +76,17 @@ import kotlin.math.roundToInt
 fun HomeEmptyMenuPopup(
     anchorOffset: Offset?,
     canAddPage: Boolean,
+    canMovePageLeft: Boolean,
+    canMovePageRight: Boolean,
     canDeleteCurrentPage: Boolean,
     onAddWidget: () -> Unit,
     onOpenWallpaper: () -> Unit,
+    onEditLayout: () -> Unit,
     onOpenSettings: () -> Unit,
     onAddPageAtStart: () -> Unit,
     onAddPageAtEnd: () -> Unit,
+    onMovePageLeft: () -> Unit,
+    onMovePageRight: () -> Unit,
     onDeleteCurrentPage: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -120,6 +128,12 @@ fun HomeEmptyMenuPopup(
                         onClick = onOpenWallpaper,
                     ),
                     ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.home_menu_edit_layout)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Edit, contentDescription = null) },
+                        testTag = "home_menu_edit_layout",
+                        onClick = onEditLayout,
+                    ),
+                    ExpressiveMenuItemSpec(
                         text = { Text(text = stringResource(R.string.home_menu_settings)) },
                         leadingIcon = { Icon(imageVector = Icons.Rounded.Settings, contentDescription = null) },
                         testTag = "home_menu_settings",
@@ -145,6 +159,30 @@ fun HomeEmptyMenuPopup(
                                 },
                                 testTag = "home_menu_add_page_end",
                                 onClick = onAddPageAtEnd,
+                            )
+                        )
+                    }
+                    if (canMovePageLeft) {
+                        add(
+                            ExpressiveMenuItemSpec(
+                                text = { Text(text = stringResource(R.string.home_menu_move_page_left)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                                },
+                                testTag = "home_menu_move_page_left",
+                                onClick = onMovePageLeft,
+                            )
+                        )
+                    }
+                    if (canMovePageRight) {
+                        add(
+                            ExpressiveMenuItemSpec(
+                                text = { Text(text = stringResource(R.string.home_menu_move_page_right)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null)
+                                },
+                                testTag = "home_menu_move_page_right",
+                                onClick = onMovePageRight,
                             )
                         )
                     }
@@ -193,59 +231,43 @@ fun WidgetContextMenuDropdown(
     widgetHostController: WidgetHostController,
     host: WidgetContextMenuHost,
 ) {
+    val canReconfigure = remember(widget.appWidgetId) {
+        widgetHostController.isReconfigurable(widget.appWidgetId)
+    }
+    val canResize = remember(widget.appWidgetId, cols) {
+        widgetHostController.getResizeSpec(widget.appWidgetId, cols).isResizable
+    }
+    val widgetActionsGroup = buildList {
+        if (canReconfigure) {
+            add(
+                ExpressiveMenuItemSpec(
+                    text = { Text(text = stringResource(R.string.widget_menu_configure)) },
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.Tune, contentDescription = null) },
+                    testTag = "widget_menu_configure",
+                    onClick = { host.onReconfigure(widget) },
+                )
+            )
+        }
+        if (canResize) {
+            add(
+                ExpressiveMenuItemSpec(
+                    text = { Text(text = stringResource(R.string.widget_menu_resize)) },
+                    leadingIcon = { Icon(imageVector = Icons.Rounded.AspectRatio, contentDescription = null) },
+                    testTag = "widget_menu_resize",
+                    onClick = { host.onResize(widget) },
+                )
+            )
+        }
+    }
+
     DropdownMenuPopup(
-        expanded = expanded,
+        expanded = expanded && widgetActionsGroup.isNotEmpty(),
         onDismissRequest = host.onDismiss,
         modifier = Modifier.testTag("widget_context_menu_popup"),
     ) {
-        val canReconfigure = remember(widget.appWidgetId) {
-            widgetHostController.isReconfigurable(widget.appWidgetId)
-        }
-        val canResize = remember(widget.appWidgetId, cols) {
-            widgetHostController.getResizeSpec(widget.appWidgetId, cols).isResizable
-        }
-
-        val errorItemColors = MenuDefaults.itemColors(
-            textColor = MaterialTheme.colorScheme.error,
-            leadingIconColor = MaterialTheme.colorScheme.error,
-        )
-
-        val widgetActionsGroup = buildList {
-            if (canReconfigure) {
-                add(
-                    ExpressiveMenuItemSpec(
-                        text = { Text(text = stringResource(R.string.widget_menu_configure)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.Tune, contentDescription = null) },
-                        testTag = "widget_menu_configure",
-                        onClick = { host.onReconfigure(widget) },
-                    )
-                )
-            }
-            if (canResize) {
-                add(
-                    ExpressiveMenuItemSpec(
-                        text = { Text(text = stringResource(R.string.widget_menu_resize)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.AspectRatio, contentDescription = null) },
-                        testTag = "widget_menu_resize",
-                        onClick = { host.onResize(widget) },
-                    )
-                )
-            }
-        }
-
-        val removeGroup = listOf(
-            ExpressiveMenuItemSpec(
-                text = { Text(text = stringResource(R.string.widget_menu_remove)) },
-                leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
-                colors = errorItemColors,
-                testTag = "widget_menu_remove",
-                onClick = { host.onRemove(widget) },
-            )
-        )
-
         ExpressiveMenuGroupsContent(
-            groups = listOf(widgetActionsGroup, removeGroup),
-            parentExpanded = expanded,
+            groups = listOf(widgetActionsGroup),
+            parentExpanded = expanded && widgetActionsGroup.isNotEmpty(),
         )
     }
 }

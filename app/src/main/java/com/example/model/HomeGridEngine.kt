@@ -8,7 +8,14 @@ import kotlin.math.abs
  */
 object HomeGridEngine {
 
-    const val HOME_GRID_ROWS = 6
+    const val MIN_HOME_GRID_COLUMNS = 1
+    const val MAX_HOME_GRID_COLUMNS = 8
+    const val DEFAULT_HOME_GRID_COLUMNS = 4
+
+    const val MIN_HOME_GRID_ROWS = 1
+    const val MAX_HOME_GRID_ROWS = 12
+    const val DEFAULT_HOME_GRID_ROWS = 6
+    const val HOME_GRID_ROWS = DEFAULT_HOME_GRID_ROWS
 
     fun buildOccupancy(
         widgets: List<PlacedWidget>,

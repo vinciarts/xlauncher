@@ -321,7 +321,8 @@ data class SearchProviderApp(
 data class LauncherSettings(
     val homePageCount: Int = 2,
     val homeLoopPaging: Boolean = true,
-    val homeGridColumns: Int = 4,
+    val homeGridColumns: Int = HomeGridEngine.DEFAULT_HOME_GRID_COLUMNS,
+    val homeGridRows: Int = HomeGridEngine.DEFAULT_HOME_GRID_ROWS,
     val homePages: ImmutableMap<Int, ImmutableList<String>> = persistentMapOf(),
     val placedHomeApps: ImmutableList<PlacedHomeApp> = persistentListOf(),
     val placedWidgets: ImmutableList<PlacedWidget> = persistentListOf(),
@@ -400,6 +401,7 @@ data class LauncherUiState(
     val homeEmptyMenuAnchor: Offset? = null,
     val widgetMenuId: Int? = null,
     val resizingWidgetId: Int? = null,
+    val isHomeEditMode: Boolean = false,
     val moveWidgetTarget: PlacedWidget? = null,
     val widgetPickerPackageFilter: String? = null,
     val homePageCommand: HomePageCommand? = null,

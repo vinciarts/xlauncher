@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -168,10 +170,17 @@ fun AppDrawerScreen(
 
     // Uniform one-shot pull-down-to-close matching HomeScreen swipe threshold & fling velocity.
     val pullFromTopDismiss = remember(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
-        var gestureScrolledList = false
-        var accumulatedDown = 0f
-        var triggered = false
         object : NestedScrollConnection {
+            private var gestureScrolledList = false
+            private var accumulatedDown = 0f
+            private var triggered = false
+
+            fun reset() {
+                gestureScrolledList = false
+                accumulatedDown = 0f
+                triggered = false
+            }
+
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput && available.y < 0f) {
                     accumulatedDown = (accumulatedDown + available.y).coerceAtLeast(0f)
@@ -222,12 +231,16 @@ fun AppDrawerScreen(
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                gestureScrolledList = false
-                accumulatedDown = 0f
-                triggered = false
+                reset()
                 return Velocity.Zero
             }
         }
+    }
+
+    // Reset nested-scroll dismiss state whenever drawer visibility changes so an aborted close
+    // never leaves triggered/accumulatedDown stuck across reopen.
+    LaunchedEffect(isActive, pullFromTopDismiss) {
+        pullFromTopDismiss.reset()
     }
 
     val directPullDownModifier = Modifier.pointerInput(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
@@ -410,6 +423,7 @@ fun AppDrawerScreen(
                                 apps = tabPage.apps,
                                 cols = drawerColumns,
                                 tabIndex = realPage,
+                                isActive = isActive,
                                 isCurrentPage = virtualPage == pagerState.currentPage,
                                 onAppClick = onAppClick,
                                 appMenuHost = appMenuHost,
@@ -548,14 +562,23 @@ private fun DrawerAppsVerticalGrid(
     apps: ImmutableList<AppItem>,
     cols: Int,
     tabIndex: Int,
+    isActive: Boolean,
     isCurrentPage: Boolean,
     onAppClick: (AppItem) -> Unit,
     appMenuHost: AppContextMenuHost,
     modifier: Modifier = Modifier,
 ) {
     val iconSize = if (cols == 5) 48.dp else 52.dp
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            // Cancel any stuck fling/scroll lock when the drawer is unplaced on close.
+            gridState.scroll(MutatePriority.PreventUserInput) {}
+        }
+    }
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),
+        state = gridState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),

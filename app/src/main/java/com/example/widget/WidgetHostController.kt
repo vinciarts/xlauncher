@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import com.example.model.HomeGridEngine
 import com.example.model.WidgetCatalogItem
 import com.example.model.WidgetResizeSpec
 import kotlinx.coroutines.Dispatchers
@@ -366,55 +367,58 @@ class WidgetHostController(private val context: Context) {
         return candidateIds.filter { id -> getProviderInfo(id) != null }.toSet()
     }
 
-    fun computeDefaultSpan(info: AppWidgetProviderInfo, gridColumns: Int): Pair<Int, Int> {
-        val cols = gridColumns.coerceIn(1, 5)
+    fun computeDefaultSpan(
+        info: AppWidgetProviderInfo,
+        gridColumns: Int,
+        gridRows: Int = HomeGridEngine.DEFAULT_HOME_GRID_ROWS,
+    ): Pair<Int, Int> {
+        val cols = gridColumns.coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
+        val rows = gridRows.coerceIn(HomeGridEngine.MIN_HOME_GRID_ROWS, HomeGridEngine.MAX_HOME_GRID_ROWS)
         val spanX = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.targetCellWidth > 0) {
             info.targetCellWidth.coerceIn(1, cols)
         } else {
             ((info.minWidth + 30) / 70).coerceIn(1, cols)
         }
         val spanY = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.targetCellHeight > 0) {
-            info.targetCellHeight.coerceIn(1, MAX_WIDGET_ROWS)
+            info.targetCellHeight.coerceIn(1, rows)
         } else {
-            ((info.minHeight + 30) / 70).coerceIn(1, MAX_WIDGET_ROWS)
+            ((info.minHeight + 30) / 70).coerceIn(1, rows)
         }
         return spanX to spanY
     }
 
-    fun getResizeSpec(appWidgetId: Int, gridColumns: Int): WidgetResizeSpec {
-        val cols = gridColumns.coerceIn(1, 5)
+    fun getResizeSpec(
+        appWidgetId: Int,
+        gridColumns: Int,
+        gridRows: Int = HomeGridEngine.DEFAULT_HOME_GRID_ROWS,
+    ): WidgetResizeSpec {
+        val cols = gridColumns.coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
+        val rows = gridRows.coerceIn(HomeGridEngine.MIN_HOME_GRID_ROWS, HomeGridEngine.MAX_HOME_GRID_ROWS)
         val info = getProviderInfo(appWidgetId) ?: return WidgetResizeSpec(
             canResizeHorizontal = false,
             canResizeVertical = false,
             minSpanX = 1,
             maxSpanX = cols,
             minSpanY = 1,
-            maxSpanY = MAX_WIDGET_ROWS,
+            maxSpanY = rows,
         )
         val mode = info.resizeMode
         val canH = (mode and AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
         val canV = (mode and AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
 
-        val minSpanX = if (info.minResizeWidth > 0) {
-            ((info.minResizeWidth + 30) / 70).coerceIn(1, cols)
-        } else {
-            1
-        }
+        // Allow shrinking down to 1x1 regardless of provider-declared minResizeWidth/Height.
+        val minSpanX = 1
         val maxSpanX = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeWidth > 0) {
             ((info.maxResizeWidth + 30) / 70).coerceIn(minSpanX, cols)
         } else {
             cols
         }
 
-        val minSpanY = if (info.minResizeHeight > 0) {
-            ((info.minResizeHeight + 30) / 70).coerceIn(1, MAX_WIDGET_ROWS)
-        } else {
-            1
-        }
+        val minSpanY = 1
         val maxSpanY = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeHeight > 0) {
-            ((info.maxResizeHeight + 30) / 70).coerceIn(minSpanY, MAX_WIDGET_ROWS)
+            ((info.maxResizeHeight + 30) / 70).coerceIn(minSpanY, rows)
         } else {
-            MAX_WIDGET_ROWS
+            rows
         }
 
         return WidgetResizeSpec(
@@ -467,7 +471,10 @@ class WidgetHostController(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    suspend fun loadWidgetCatalog(gridColumns: Int): List<WidgetCatalogItem> = withContext(Dispatchers.IO) {
+    suspend fun loadWidgetCatalog(
+        gridColumns: Int,
+        gridRows: Int = HomeGridEngine.DEFAULT_HOME_GRID_ROWS,
+    ): List<WidgetCatalogItem> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val providers = runCatching { appWidgetManager.installedProviders }.getOrNull().orEmpty()
         val collator = Collator.getInstance(Locale.getDefault()).apply {
@@ -503,7 +510,7 @@ class WidgetHostController(private val context: Context) {
                 ?.takeIf { it.isNotEmpty() }
                 ?: appLabel
 
-            val (spanX, spanY) = computeDefaultSpan(info, gridColumns)
+            val (spanX, spanY) = computeDefaultSpan(info, gridColumns, gridRows)
 
             items.add(
                 WidgetCatalogItem(

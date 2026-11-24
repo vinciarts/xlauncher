@@ -73,6 +73,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val homeEmptyMenuAnchor = MutableStateFlow<Offset?>(null)
     private val widgetMenuId = MutableStateFlow<Int?>(null)
     private val resizingWidgetId = MutableStateFlow<Int?>(null)
+    private val isHomeEditMode = MutableStateFlow(false)
     private val moveWidgetTarget = MutableStateFlow<PlacedWidget?>(null)
     private val widgetPickerPackageFilter = MutableStateFlow<String?>(null)
     private val homePageCommand = MutableStateFlow<HomePageCommand?>(null)
@@ -105,6 +106,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val homeEmptyAnchor: Offset?,
         val widgetMenuId: Int?,
         val resizingWidgetId: Int?,
+        val isHomeEditMode: Boolean,
         val moveWidget: PlacedWidget?,
         val widgetPickerPackageFilter: String?,
     )
@@ -113,6 +115,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val homeEmptyAnchor: Offset?,
         val widgetMenuId: Int?,
         val resizingWidgetId: Int?,
+        val isHomeEditMode: Boolean,
         val moveWidget: PlacedWidget?,
         val widgetPickerPackageFilter: String?,
     )
@@ -143,11 +146,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val widgetOverlayFlow = combine(
         homeEmptyMenuAnchor,
         widgetMenuId,
-        resizingWidgetId,
+        combine(resizingWidgetId, isHomeEditMode) { resizeId, editMode -> resizeId to editMode },
         moveWidgetTarget,
         widgetPickerPackageFilter,
-    ) { emptyAnchor, wMenuId, wResizeId, wMove, pkgFilter ->
-        WidgetOverlayState(emptyAnchor, wMenuId, wResizeId, wMove, pkgFilter)
+    ) { emptyAnchor, wMenuId, resizePair, wMove, pkgFilter ->
+        WidgetOverlayState(emptyAnchor, wMenuId, resizePair.first, resizePair.second, wMove, pkgFilter)
     }
 
     private val overlayFlow = combine(
@@ -164,6 +167,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             homeEmptyAnchor = widgetOv.homeEmptyAnchor,
             widgetMenuId = widgetOv.widgetMenuId,
             resizingWidgetId = widgetOv.resizingWidgetId,
+            isHomeEditMode = widgetOv.isHomeEditMode,
             moveWidget = widgetOv.moveWidget,
             widgetPickerPackageFilter = widgetOv.widgetPickerPackageFilter,
         )
@@ -224,6 +228,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 widgets = rawPageWidgets,
                 apps = rawPageApps,
                 cols = settings.homeGridColumns,
+                rows = settings.homeGridRows,
             )
             homePageWidgets.add(normW.toImmutableList())
             homePageApps.add(
@@ -360,6 +365,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             homeEmptyMenuAnchor = overlay.homeEmptyAnchor,
             widgetMenuId = overlay.widgetMenuId,
             resizingWidgetId = overlay.resizingWidgetId,
+            isHomeEditMode = overlay.isHomeEditMode,
             moveWidgetTarget = overlay.moveWidget,
             widgetPickerPackageFilter = overlay.widgetPickerPackageFilter,
             homePageCommand = nav.homePageCommand,
@@ -507,6 +513,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openDrawer(focusSearch: Boolean = false) {
+        isHomeEditMode.value = false
         resizingWidgetId.value = null
         searchQuery.value = ""
         autoFocusSearch.value = focusSearch
@@ -521,6 +528,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         clearAppMenuState()
         homeEmptyMenuAnchor.value = null
         widgetMenuId.value = null
+        isHomeEditMode.value = false
         resizingWidgetId.value = null
         refreshDefaultLauncherStatus()
         destination.value = LauncherDestination.SETTINGS
@@ -535,6 +543,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             appTabsTarget.value == null &&
             homeEmptyMenuAnchor.value == null &&
             widgetMenuId.value == null &&
+            !isHomeEditMode.value &&
             resizingWidgetId.value == null &&
             moveWidgetTarget.value == null
 
@@ -554,6 +563,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         appTabsTarget.value = null
         homeEmptyMenuAnchor.value = null
         widgetMenuId.value = null
+        isHomeEditMode.value = false
         resizingWidgetId.value = null
         moveWidgetTarget.value = null
         widgetPickerPackageFilter.value = null
@@ -941,8 +951,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun removeFromHomePage(app: AppItem, pageIndex: Int) {
         clearAppMenuState()
+        removeHomeAppByKey(app.componentKey, pageIndex)
+    }
+
+    fun removeHomeAppByKey(componentKey: String, pageIndex: Int) {
         viewModelScope.launch {
-            prefsRepository.removeAppFromHomePage(app.componentKey, pageIndex)
+            prefsRepository.removeAppFromHomePage(componentKey, pageIndex)
+        }
+    }
+
+    fun removeDockAppByKey(componentKey: String) {
+        viewModelScope.launch {
+            prefsRepository.togglePinDock(componentKey)
         }
     }
 
@@ -1022,12 +1042,31 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun moveCurrentHomePage(delta: Int) {
+        homeEmptyMenuAnchor.value = null
+        resizingWidgetId.value = null
+        val state = uiState.value
+        val currentCount = state.settings.homePageCount
+        if (currentCount <= 1 || delta == 0) return
+        val fromPage = state.currentHomePage.coerceIn(0, currentCount - 1)
+        val toPage = fromPage + delta
+        if (toPage !in 0 until currentCount) return
+        currentHomePage.value = toPage
+        viewModelScope.launch {
+            prefsRepository.moveHomePage(fromPage, delta)
+        }
+    }
+
     fun setHomeLoopPaging(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setHomeLoopPaging(enabled) }
     }
 
     fun setHomeGridColumns(columns: Int) {
         viewModelScope.launch { prefsRepository.setHomeGridColumns(columns) }
+    }
+
+    fun setHomeGridRows(rows: Int) {
+        viewModelScope.launch { prefsRepository.setHomeGridRows(rows) }
     }
 
     fun setDrawerColumns(columns: Int) {
@@ -1122,7 +1161,28 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         widgetMenuId.value = null
     }
 
+    fun enterHomeEditMode() {
+        homeEmptyMenuAnchor.value = null
+        widgetMenuId.value = null
+        clearAppMenuState()
+        isHomeEditMode.value = true
+    }
+
+    fun exitHomeEditMode() {
+        isHomeEditMode.value = false
+        resizingWidgetId.value = null
+    }
+
     fun openResizeWidget(widget: PlacedWidget) {
+        widgetMenuId.value = null
+        homeEmptyMenuAnchor.value = null
+        clearAppMenuState()
+        isHomeEditMode.value = true
+        resizingWidgetId.value = widget.appWidgetId
+    }
+
+    fun selectEditWidget(widget: PlacedWidget) {
+        if (!isHomeEditMode.value) return
         widgetMenuId.value = null
         homeEmptyMenuAnchor.value = null
         clearAppMenuState()

@@ -45,6 +45,10 @@
 
     <!-- Settings -->
     <string name="settings_title">桌面设置</string>
+    <string name="settings_tab_general">常规</string>
+    <string name="settings_tab_layout">布局</string>
+    <string name="settings_tab_gesture">手势</string>
+    <string name="settings_tab_search">搜索</string>
     <string name="settings_default_launcher">默认桌面</string>
     <string name="settings_default_yes">已是系统默认桌面</string>
     <string name="settings_default_no">未设为默认桌面</string>
@@ -54,6 +58,7 @@
     <string name="settings_home_pages">桌面页数</string>
     <string name="settings_home_loop">桌面循环翻页</string>
     <string name="settings_home_columns">桌面列数</string>
+    <string name="settings_home_rows">桌面行数</string>
     <string name="grid_columns_option">%1$d 列</string>
     <string name="grid_rows_option">%1$d 行</string>
 
@@ -138,9 +143,14 @@
     <!-- Desktop Empty Space Menu & Widgets -->
     <string name="home_menu_add_widget">小组件</string>
     <string name="home_menu_wallpaper">壁纸</string>
+    <string name="home_menu_edit_layout">编辑布局</string>
+    <string name="home_edit_mode_banner">布局编辑中 · 点击空白处退出</string>
+    <string name="home_drag_remove_zone">拖到此处移除</string>
     <string name="home_menu_settings">桌面设置</string>
     <string name="home_menu_add_page_start">在最前添加页</string>
     <string name="home_menu_add_page_end">在最后添加页</string>
+    <string name="home_menu_move_page_left">向左移动当前页</string>
+    <string name="home_menu_move_page_right">向右移动当前页</string>
     <string name="home_menu_delete_page">删除当前页</string>
     <string name="home_pages_limit_message">最多支持 %1$d 个桌面页</string>
     <string name="drag_new_page_hint">松手以新建此页</string>

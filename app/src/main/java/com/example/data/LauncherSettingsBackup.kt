@@ -21,6 +21,7 @@ data class RestoredLauncherSettings(
     val homePageCount: Int,
     val homeLoopPaging: Boolean,
     val homeGridColumns: Int,
+    val homeGridRows: Int,
     val placedHomeApps: List<PlacedHomeApp>,
     val dockKeys: List<String>,
     val appGestures: Map<String, Map<SwipeDirection, String>>,
@@ -55,6 +56,7 @@ object LauncherSettingsBackup {
         root.put("homePageCount", settings.homePageCount)
         root.put("homeLoopPaging", settings.homeLoopPaging)
         root.put("homeGridColumns", settings.homeGridColumns)
+        root.put("homeGridRows", settings.homeGridRows)
 
         val homeAppsArr = JSONArray()
         for (app in settings.placedHomeApps) {
@@ -135,7 +137,10 @@ object LauncherSettingsBackup {
         val homePageCount = root.optInt("homePageCount", 2)
             .coerceIn(1, LauncherPreferencesRepository.MAX_HOME_PAGES)
         val homeLoopPaging = root.optBoolean("homeLoopPaging", true)
-        val homeGridColumns = root.optInt("homeGridColumns", 4).coerceIn(4, 5)
+        val homeGridColumns = root.optInt("homeGridColumns", HomeGridEngine.DEFAULT_HOME_GRID_COLUMNS)
+            .coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
+        val homeGridRows = root.optInt("homeGridRows", HomeGridEngine.DEFAULT_HOME_GRID_ROWS)
+            .coerceIn(HomeGridEngine.MIN_HOME_GRID_ROWS, HomeGridEngine.MAX_HOME_GRID_ROWS)
 
         val placedHomeApps = mutableListOf<PlacedHomeApp>()
         val seenPageAppKeys = mutableSetOf<String>()
@@ -151,7 +156,7 @@ object LauncherSettingsBackup {
                 val rawX = obj.optInt("cellX", -1)
                 val rawY = obj.optInt("cellY", -1)
                 val cx = if (rawX in 0 until homeGridColumns) rawX else -1
-                val cy = if (rawY in 0 until HomeGridEngine.HOME_GRID_ROWS) rawY else -1
+                val cy = if (rawY in 0 until homeGridRows) rawY else -1
                 placedHomeApps.add(
                     PlacedHomeApp(
                         componentKey = key,
@@ -271,6 +276,7 @@ object LauncherSettingsBackup {
             homePageCount = homePageCount,
             homeLoopPaging = homeLoopPaging,
             homeGridColumns = homeGridColumns,
+            homeGridRows = homeGridRows,
             placedHomeApps = placedHomeApps,
             dockKeys = dockKeys,
             appGestures = appGestures,

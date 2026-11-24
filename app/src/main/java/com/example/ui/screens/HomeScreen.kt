@@ -27,7 +27,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -97,6 +100,21 @@ import com.example.ui.components.RESIZE_HANDLE_MARGIN_DP
 import com.example.ui.components.WidgetContextMenuDropdown
 import com.example.ui.components.WidgetContextMenuHost
 import com.example.ui.components.WidgetResizeFrameOverlay
+import com.example.ui.screens.home.CELL_COL_GAP_DP
+import com.example.ui.screens.home.CELL_ROW_GAP_DP
+import com.example.ui.screens.home.DRAG_EDGE_FLIP_DELAY_MS
+import com.example.ui.screens.home.DRAG_EDGE_INNER_DP
+import com.example.ui.screens.home.DRAG_NEW_FRONT_PAGE
+import com.example.ui.screens.home.DragItem
+import com.example.ui.screens.home.GRID_BOTTOM_PAD_DP
+import com.example.ui.screens.home.GRID_HORIZONTAL_PAD_DP
+import com.example.ui.screens.home.GRID_TOP_PAD_DP
+import com.example.ui.screens.home.HomeDragOverlay
+import com.example.ui.screens.home.HomeDragSession
+import com.example.ui.screens.home.HomePageContent
+import com.example.ui.screens.home.HomePageIndicatorBar
+import com.example.ui.screens.home.LayoutCoordsRef
+import com.example.ui.screens.home.PageGridMetrics
 import com.example.widget.WidgetHostController
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
@@ -117,66 +135,6 @@ internal fun View.performGestureTriggerHaptic() {
     performHapticFeedback(feedbackConstant)
 }
 
-private class LayoutCoordsRef(var coords: LayoutCoordinates? = null)
-
-private data class PageGridMetrics(
-    val gridBounds: Rect = Rect.Zero,
-    val cellWidthPx: Float = 160f,
-    val cellHeightPx: Float = 160f,
-    val colStepPx: Float = 166f,
-    val rowStepPx: Float = 168f,
-    val colGapPx: Float = 6f,
-    val rowGapPx: Float = 8f,
-)
-
-private sealed class DragItem {
-    data class App(val slot: HomeAppSlot) : DragItem()
-    data class DockApp(val app: AppItem, val index: Int) : DragItem()
-    data class Widget(val widget: PlacedWidget) : DragItem()
-
-    val spanX: Int
-        get() = when (this) {
-            is App, is DockApp -> 1
-            is Widget -> widget.spanX
-        }
-
-    val spanY: Int
-        get() = when (this) {
-            is App, is DockApp -> 1
-            is Widget -> widget.spanY
-        }
-
-    val sourcePage: Int
-        get() = when (this) {
-            is App -> slot.pageIndex
-            is DockApp -> 0
-            is Widget -> widget.pageIndex
-        }
-}
-
-private data class HomeDragSession(
-    val item: DragItem,
-    val pointerWindowPos: Offset,
-    val grabOffsetInItem: Offset,
-    val itemSizePx: Size,
-    val targetPage: Int,
-    val targetCellX: Int,
-    val targetCellY: Int,
-    val targetDockIndex: Int? = null,
-    val targetDockSlotCount: Int = 0,
-    val canDrop: Boolean,
-    val isSwapTarget: Boolean,
-)
-
-private const val CELL_COL_GAP_DP = 6
-private const val CELL_ROW_GAP_DP = 8
-private const val GRID_HORIZONTAL_PAD_DP = 16
-private const val GRID_TOP_PAD_DP = 12
-private const val GRID_BOTTOM_PAD_DP = 8
-private const val DRAG_EDGE_INNER_DP = 32
-private const val DRAG_EDGE_FLIP_DELAY_MS = 450L
-private const val DRAG_NEW_FRONT_PAGE = -1
-
 @Composable
 fun HomeScreen(
     isLoading: Boolean,
@@ -186,11 +144,13 @@ fun HomeScreen(
     appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
     homeGestures: ImmutableMap<SwipeDirection, HomeGestureAction>,
     homeGridColumns: Int,
+    homeGridRows: Int,
     homeLoopPaging: Boolean,
     maxHomePages: Int,
     maxDockItems: Int,
     currentHomePage: Int,
     homePageCommand: HomePageCommand?,
+    isHomeEditMode: Boolean,
     resizingWidgetId: Int?,
     widgetHostController: WidgetHostController,
     appMenuHost: AppContextMenuHost,
@@ -200,7 +160,9 @@ fun HomeScreen(
     onAppClick: (AppItem) -> Unit,
     onAppSwipe: (AppItem, SwipeDirection, AppActionOrigin) -> Unit,
     onResizeWidget: (Int, Int, Int, Int, Int) -> Unit,
+    onSelectEditWidget: (PlacedWidget) -> Unit,
     onDismissResizeWidget: () -> Unit,
+    onExitHomeEditMode: () -> Unit,
     onMoveHomeAppToCell: (String, Int, Int, Int, Int) -> Unit,
     onMoveWidgetToCell: (Int, Int, Int, Int) -> Unit,
     onMoveHomeAppToNewPage: (String, Int, Boolean, Int, Int) -> Unit,
@@ -209,13 +171,19 @@ fun HomeScreen(
     onMoveDockAppToHomeCell: (String, Int, Int, Int) -> Unit,
     onMoveDockAppToNewPage: (String, Boolean, Int, Int) -> Unit,
     onMoveHomeAppToDock: (String, Int, Int) -> Unit,
+    onRemoveHomeApp: (String, Int) -> Unit,
+    onRemoveDockApp: (String) -> Unit,
+    onRemoveWidget: (PlacedWidget) -> Unit,
     onHomeSwipe: (SwipeDirection) -> Unit,
     onEmptyLongPress: (Offset) -> Unit,
     onEmptyMenuAddWidget: () -> Unit,
     onEmptyMenuOpenWallpaper: () -> Unit,
+    onEmptyMenuEditLayout: () -> Unit,
     onEmptyMenuOpenSettings: () -> Unit,
     onEmptyMenuAddPageAtStart: () -> Unit,
     onEmptyMenuAddPageAtEnd: () -> Unit,
+    onEmptyMenuMovePageLeft: () -> Unit,
+    onEmptyMenuMovePageRight: () -> Unit,
     onEmptyMenuDeleteCurrentPage: () -> Unit,
     onDismissEmptyMenu: () -> Unit,
     modifier: Modifier = Modifier,
@@ -233,6 +201,7 @@ fun HomeScreen(
     val currentHomePageWidgets by rememberUpdatedState(homePageWidgets)
     val currentDockApps by rememberUpdatedState(dockApps)
     val currentCols by rememberUpdatedState(homeGridColumns)
+    val currentRows by rememberUpdatedState(homeGridRows)
     val currentMaxDockItems by rememberUpdatedState(maxDockItems)
     val currentOnMoveHomeAppToCell by rememberUpdatedState(onMoveHomeAppToCell)
     val currentOnMoveWidgetToCell by rememberUpdatedState(onMoveWidgetToCell)
@@ -242,8 +211,14 @@ fun HomeScreen(
     val currentOnMoveDockAppToHomeCell by rememberUpdatedState(onMoveDockAppToHomeCell)
     val currentOnMoveDockAppToNewPage by rememberUpdatedState(onMoveDockAppToNewPage)
     val currentOnMoveHomeAppToDock by rememberUpdatedState(onMoveHomeAppToDock)
+    val currentOnRemoveHomeApp by rememberUpdatedState(onRemoveHomeApp)
+    val currentOnRemoveDockApp by rememberUpdatedState(onRemoveDockApp)
+    val currentOnRemoveWidget by rememberUpdatedState(onRemoveWidget)
 
     var dragSession by remember { mutableStateOf<HomeDragSession?>(null) }
+    val currentIsHomeEditMode by rememberUpdatedState(isHomeEditMode)
+    val currentOnExitHomeEditMode by rememberUpdatedState(onExitHomeEditMode)
+    val currentOnSelectEditWidget by rememberUpdatedState(onSelectEditWidget)
     val isResizingWidget by rememberUpdatedState(resizingWidgetId != null)
     val isDraggingItem by rememberUpdatedState(dragSession != null)
     val isMenuOpen by rememberUpdatedState(
@@ -252,11 +227,11 @@ fun HomeScreen(
             homeEmptyMenuAnchor != null
     )
 
-    BackHandler(enabled = resizingWidgetId != null || dragSession != null) {
+    BackHandler(enabled = isHomeEditMode || resizingWidgetId != null || dragSession != null) {
         if (dragSession != null) {
             dragSession = null
         } else {
-            currentOnDismissResizeWidget()
+            currentOnExitHomeEditMode()
         }
     }
 
@@ -275,6 +250,7 @@ fun HomeScreen(
     var resizingWidgetBounds by remember(resizingWidgetId) { mutableStateOf<Rect?>(null) }
     var pageGridMetrics by remember { mutableStateOf(PageGridMetrics()) }
     var dockBounds by remember { mutableStateOf(Rect.Zero) }
+    var removeZoneBounds by remember { mutableStateOf(Rect.Zero) }
     var displayedRealPage by remember { mutableIntStateOf(currentHomePage.coerceIn(0, pageCount - 1)) }
 
     LaunchedEffect(dockApps.isEmpty()) {
@@ -283,6 +259,7 @@ fun HomeScreen(
 
     val currentPageGridMetrics by rememberUpdatedState(pageGridMetrics)
     val currentDockBounds by rememberUpdatedState(dockBounds)
+    val currentRemoveZoneBounds by rememberUpdatedState(removeZoneBounds)
     val currentDisplayedRealPage by rememberUpdatedState(displayedRealPage)
     val currentPageCount by rememberUpdatedState(pageCount)
     val currentLoopEnabled by rememberUpdatedState(loopEnabled)
@@ -298,8 +275,8 @@ fun HomeScreen(
         metrics: PageGridMetrics,
         fixedItemSizePx: Size? = null,
     ): HomeDragSession {
-        val cols = currentCols.coerceIn(4, 5)
-        val rows = HomeGridEngine.HOME_GRID_ROWS
+        val cols = currentCols.coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
+        val rows = currentRows.coerceIn(HomeGridEngine.MIN_HOME_GRID_ROWS, HomeGridEngine.MAX_HOME_GRID_ROWS)
         val sx = item.spanX.coerceIn(1, cols)
         val sy = item.spanY.coerceIn(1, rows)
 
@@ -308,6 +285,26 @@ fun HomeScreen(
             height = sy * metrics.cellHeightPx + (sy - 1) * metrics.rowGapPx,
         )
         val itemSizePx = fixedItemSizePx?.takeIf { it.width > 0f && it.height > 0f } ?: defaultItemSize
+
+        val activeRemoveBounds = currentRemoveZoneBounds
+        val removeHitPadPx = with(density) { 16.dp.toPx() }
+        val isOverRemove = activeRemoveBounds != Rect.Zero &&
+            pointerWindowPos.y <= activeRemoveBounds.bottom + removeHitPadPx &&
+            pointerWindowPos.x in (activeRemoveBounds.left - removeHitPadPx)..(activeRemoveBounds.right + removeHitPadPx)
+        if (isOverRemove) {
+            return HomeDragSession(
+                item = item,
+                pointerWindowPos = pointerWindowPos,
+                grabOffsetInItem = grabOffsetInItem,
+                itemSizePx = itemSizePx,
+                targetPage = pageIndex,
+                targetCellX = 0,
+                targetCellY = 0,
+                canDrop = true,
+                isSwapTarget = false,
+                isOverRemoveZone = true,
+            )
+        }
 
         val activeDockBounds = currentDockBounds
         val dockHitPaddingPx = with(density) { 12.dp.toPx() }
@@ -418,9 +415,10 @@ fun HomeScreen(
                     widgets = pageWidgets,
                     apps = pageApps.map { PlacedHomeApp(it.app.componentKey, it.pageIndex, it.cellX, it.cellY) },
                     cols = cols,
+                    rows = rows,
                     ignoreWidgetId = item.widget.appWidgetId,
                 )
-                canDrop = HomeGridEngine.canPlace(occ, targetX, targetY, sx, sy, cols)
+                canDrop = HomeGridEngine.canPlace(occ, targetX, targetY, sx, sy, cols, rows)
                 isSwap = false
             }
         }
@@ -482,7 +480,11 @@ fun HomeScreen(
             metrics = currentPageGridMetrics,
             fixedItemSizePx = fixedSize,
         )
-        val slotChanged = if (next.targetDockIndex != null || prev.targetDockIndex != null) {
+        val slotChanged = if (next.isOverRemoveZone != prev.isOverRemoveZone) {
+            true
+        } else if (next.isOverRemoveZone) {
+            false
+        } else if (next.targetDockIndex != null || prev.targetDockIndex != null) {
             next.targetDockIndex != prev.targetDockIndex
         } else {
             next.targetPage != prev.targetPage ||
@@ -512,6 +514,14 @@ fun HomeScreen(
             fixedItemSizePx = fixedSize,
         )
         dragSession = null
+        if (finalSession.isOverRemoveZone) {
+            when (val dragged = finalSession.item) {
+                is DragItem.App -> currentOnRemoveHomeApp(dragged.slot.app.componentKey, dragged.slot.pageIndex)
+                is DragItem.DockApp -> currentOnRemoveDockApp(dragged.app.componentKey)
+                is DragItem.Widget -> currentOnRemoveWidget(dragged.widget)
+            }
+            return
+        }
         if (finalSession.canDrop) {
             val dockTarget = finalSession.targetDockIndex
             val isNewFront = dockTarget == null && finalSession.targetPage == DRAG_NEW_FRONT_PAGE
@@ -720,6 +730,11 @@ fun HomeScreen(
                         pressStartedOnChild = (System.currentTimeMillis() - lastInteractiveTouchDownMs) < 100L
                         tryAwaitRelease()
                     },
+                    onTap = {
+                        if (currentIsHomeEditMode && !isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
+                            currentOnExitHomeEditMode()
+                        }
+                    },
                     onLongPress = { localOffset ->
                         if (!isResizingWidget && !isDraggingItem && !isMenuOpen && !pressStartedOnChild) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -921,10 +936,16 @@ fun HomeScreen(
                         )
                         val colGapPx = with(density) { CELL_COL_GAP_DP.dp.toPx() }
                         val rowGapPx = with(density) { CELL_ROW_GAP_DP.dp.toPx() }
-                        val safeCols = currentCols.coerceIn(4, 5)
-                        val rows = HomeGridEngine.HOME_GRID_ROWS
-                        val cellWidthPx = ((gridBounds.width - colGapPx * (safeCols - 1)) / safeCols).coerceAtLeast(48f)
-                        val cellHeightPx = ((gridBounds.height - rowGapPx * (rows - 1)) / rows).coerceAtLeast(48f)
+                        val safeCols = currentCols.coerceIn(
+                            HomeGridEngine.MIN_HOME_GRID_COLUMNS,
+                            HomeGridEngine.MAX_HOME_GRID_COLUMNS,
+                        )
+                        val rows = currentRows.coerceIn(
+                            HomeGridEngine.MIN_HOME_GRID_ROWS,
+                            HomeGridEngine.MAX_HOME_GRID_ROWS,
+                        )
+                        val cellWidthPx = ((gridBounds.width - colGapPx * (safeCols - 1)) / safeCols).coerceAtLeast(24f)
+                        val cellHeightPx = ((gridBounds.height - rowGapPx * (rows - 1)) / rows).coerceAtLeast(24f)
                         val next = PageGridMetrics(
                             gridBounds = gridBounds,
                             cellWidthPx = cellWidthPx,
@@ -939,7 +960,7 @@ fun HomeScreen(
                         }
                     }
 
-                    LaunchedEffect(homeGridColumns) {
+                    LaunchedEffect(homeGridColumns, homeGridRows) {
                         pagerViewportCoordsRef.coords?.let { updateStationaryGridMetrics(it) }
                     }
 
@@ -1000,10 +1021,12 @@ fun HomeScreen(
                                 pageWidgets = pageWidgets,
                                 isPreferredWidgetSlot = isPreferredWidgetSlot,
                                 isCurrentVirtualPage = isCurrentVirtualPage,
+                                isHomeEditMode = isHomeEditMode,
                                 resizingWidgetId = resizingWidgetId,
                                 draggedAppKey = draggedAppKey,
                                 draggedWidgetId = draggedWidgetId,
                                 cols = homeGridColumns,
+                                rows = homeGridRows,
                                 appGestures = appGestures,
                                 widgetHostController = widgetHostController,
                                 appMenuHost = appMenuHost,
@@ -1011,6 +1034,7 @@ fun HomeScreen(
                                 onResizingWidgetBoundsChanged = { bounds ->
                                     resizingWidgetBounds = bounds
                                 },
+                                onSelectEditWidget = onSelectEditWidget,
                                 onIconDownPointer = { id, dirs ->
                                     lastIconPointerId = id
                                     lastIconBoundDirs = dirs
@@ -1114,13 +1138,17 @@ fun HomeScreen(
                                     },
                                     onLongPressHoldChanged = { isPointerHeld = it },
                                     onSwipe = { dir -> onAppSwipe(app, dir, AppActionOrigin.DOCK) },
-                                    onDragStart = { bounds, pos ->
-                                        appMenuHost.onDismiss()
-                                        startDrag(DragItem.DockApp(app, dockIndex), bounds, pos)
+                                    onDragStart = if (isHomeEditMode) {
+                                        { bounds, pos ->
+                                            appMenuHost.onDismiss()
+                                            startDrag(DragItem.DockApp(app, dockIndex), bounds, pos)
+                                        }
+                                    } else {
+                                        null
                                     },
-                                    onDragMove = { pos -> updateDrag(pos) },
-                                    onDragEnd = { pos -> finishDrag(pos) },
-                                    onDragCancel = { dragSession = null },
+                                    onDragMove = if (isHomeEditMode) ({ pos -> updateDrag(pos) }) else null,
+                                    onDragEnd = if (isHomeEditMode) ({ pos -> finishDrag(pos) }) else null,
+                                    onDragCancel = if (isHomeEditMode) ({ dragSession = null }) else null,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                                 AppContextMenuDropdown(
@@ -1157,6 +1185,7 @@ fun HomeScreen(
                 dockBounds = dockBounds,
                 rootPos = rootPos,
                 cols = homeGridColumns,
+                rows = homeGridRows,
                 edgeIndicatorDir = activeEdgeIndicatorDir,
             )
         }
@@ -1169,13 +1198,19 @@ fun HomeScreen(
         if (activeWidget != null && (hasGridMetrics || activeBounds != null)) {
             val rootPos = rootCoordsRef.coords?.takeIf { it.isAttached }?.positionInWindow() ?: Offset.Zero
             val marginPx = with(density) { RESIZE_HANDLE_MARGIN_DP.dp.toPx() }
+            val safeCols = homeGridColumns.coerceIn(
+                HomeGridEngine.MIN_HOME_GRID_COLUMNS,
+                HomeGridEngine.MAX_HOME_GRID_COLUMNS,
+            )
+            val safeRows = homeGridRows.coerceIn(
+                HomeGridEngine.MIN_HOME_GRID_ROWS,
+                HomeGridEngine.MAX_HOME_GRID_ROWS,
+            )
             val widgetRectInRoot = if (hasGridMetrics) {
-                val safeCols = homeGridColumns.coerceIn(4, 5)
-                val rows = HomeGridEngine.HOME_GRID_ROWS
                 val sx = activeWidget.spanX.coerceIn(1, safeCols)
-                val sy = activeWidget.spanY.coerceIn(1, rows)
+                val sy = activeWidget.spanY.coerceIn(1, safeRows)
                 val cx = activeWidget.cellX.coerceIn(0, (safeCols - sx).coerceAtLeast(0))
-                val cy = activeWidget.cellY.coerceIn(0, (rows - sy).coerceAtLeast(0))
+                val cy = activeWidget.cellY.coerceIn(0, (safeRows - sy).coerceAtLeast(0))
                 val left = pageGridMetrics.gridBounds.left - rootPos.x + cx * pageGridMetrics.colStepPx
                 val top = pageGridMetrics.gridBounds.top - rootPos.y + cy * pageGridMetrics.rowStepPx
                 val w = sx * pageGridMetrics.cellWidthPx + (sx - 1) * pageGridMetrics.colGapPx
@@ -1194,10 +1229,10 @@ fun HomeScreen(
             val frameTopPx = (widgetRectInRoot.top - marginPx).roundToInt()
             val frameWidthPx = (widgetRectInRoot.width + marginPx * 2f).roundToInt().coerceAtLeast(1)
             val frameHeightPx = (widgetRectInRoot.height + marginPx * 2f).roundToInt().coerceAtLeast(1)
-            val resizeSpec = remember(activeWidget.appWidgetId, homeGridColumns) {
-                widgetHostController.getResizeSpec(activeWidget.appWidgetId, homeGridColumns)
+            val resizeSpec = remember(activeWidget.appWidgetId, safeCols, safeRows) {
+                widgetHostController.getResizeSpec(activeWidget.appWidgetId, safeCols, safeRows)
             }
-            val resizePageOccupancy = remember(activeWidget, homePageWidgets, homePageApps, homeGridColumns) {
+            val resizePageOccupancy = remember(activeWidget, homePageWidgets, homePageApps, safeCols, safeRows) {
                 val pageW = homePageWidgets.getOrElse(activeWidget.pageIndex) { emptyList() }
                 val pageA = homePageApps.getOrElse(activeWidget.pageIndex) { emptyList() }.map {
                     PlacedHomeApp(it.app.componentKey, it.pageIndex, it.cellX, it.cellY)
@@ -1205,28 +1240,55 @@ fun HomeScreen(
                 HomeGridEngine.buildOccupancy(
                     widgets = pageW,
                     apps = pageA,
-                    cols = homeGridColumns,
+                    cols = safeCols,
+                    rows = safeRows,
                     ignoreWidgetId = activeWidget.appWidgetId,
                 )
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                // Outside-tap dismiss layer behind the resize frame (only handles unconsumed outside taps)
+                // Outside-tap layer: tapping another widget switches selection in edit mode;
+                // tapping empty space exits edit mode directly.
                 if (dragSession == null) {
+                    val currentPageWidgets = homePageWidgets.getOrElse(activeWidget.pageIndex) { emptyList() }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(activeWidget.appWidgetId) {
+                            .pointerInput(activeWidget.appWidgetId, currentPageWidgets, pageGridMetrics, safeCols, safeRows) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = true)
                                     down.consume()
+                                    var upPos = down.position
                                     while (true) {
                                         val ev = awaitPointerEvent()
                                         val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                        upPos = ch.position
                                         ch.consume()
                                         if (!ch.pressed) break
                                     }
-                                    currentOnDismissResizeWidget()
+                                    val winPos = upPos + rootPos
+                                    val hitWidget = if (hasGridMetrics) {
+                                        currentPageWidgets.firstOrNull { w ->
+                                            w.appWidgetId != activeWidget.appWidgetId && run {
+                                                val sx = w.spanX.coerceIn(1, safeCols)
+                                                val sy = w.spanY.coerceIn(1, safeRows)
+                                                val cx = w.cellX.coerceIn(0, (safeCols - sx).coerceAtLeast(0))
+                                                val cy = w.cellY.coerceIn(0, (safeRows - sy).coerceAtLeast(0))
+                                                val l = pageGridMetrics.gridBounds.left + cx * pageGridMetrics.colStepPx
+                                                val t = pageGridMetrics.gridBounds.top + cy * pageGridMetrics.rowStepPx
+                                                val r = l + sx * pageGridMetrics.cellWidthPx + (sx - 1) * pageGridMetrics.colGapPx
+                                                val b = t + sy * pageGridMetrics.cellHeightPx + (sy - 1) * pageGridMetrics.rowGapPx
+                                                winPos.x in l..r && winPos.y in t..b
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                    if (hitWidget != null) {
+                                        currentOnSelectEditWidget(hitWidget)
+                                    } else {
+                                        currentOnExitHomeEditMode()
+                                    }
                                 }
                             },
                     )
@@ -1236,13 +1298,13 @@ fun HomeScreen(
                 WidgetResizeFrameOverlay(
                     widget = activeWidget,
                     spec = resizeSpec,
-                    cols = homeGridColumns,
-                    rows = HomeGridEngine.HOME_GRID_ROWS,
+                    cols = safeCols,
+                    rows = safeRows,
                     colStepPx = pageGridMetrics.colStepPx,
                     rowStepPx = pageGridMetrics.rowStepPx,
                     isDraggingInterior = dragSession != null,
                     canPlaceRect = { cx, cy, sx, sy ->
-                        HomeGridEngine.canPlace(resizePageOccupancy, cx, cy, sx, sy, homeGridColumns)
+                        HomeGridEngine.canPlace(resizePageOccupancy, cx, cy, sx, sy, safeCols, safeRows)
                     },
                     onUpdateRect = { cx, cy, sx, sy ->
                         onResizeWidget(activeWidget.appWidgetId, cx, cy, sx, sy)
@@ -1267,451 +1329,89 @@ fun HomeScreen(
         }
 
         // Empty-space long-press menu anchored directly at the local tap coordinate
+        val safeCurrentPage = currentHomePage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
         HomeEmptyMenuPopup(
             anchorOffset = homeEmptyMenuAnchor,
             canAddPage = pageCount < maxHomePages,
+            canMovePageLeft = pageCount > 1 && safeCurrentPage > 0,
+            canMovePageRight = pageCount > 1 && safeCurrentPage < pageCount - 1,
             canDeleteCurrentPage = pageCount > 1,
             onAddWidget = onEmptyMenuAddWidget,
             onOpenWallpaper = onEmptyMenuOpenWallpaper,
+            onEditLayout = onEmptyMenuEditLayout,
             onOpenSettings = onEmptyMenuOpenSettings,
             onAddPageAtStart = onEmptyMenuAddPageAtStart,
             onAddPageAtEnd = onEmptyMenuAddPageAtEnd,
+            onMovePageLeft = onEmptyMenuMovePageLeft,
+            onMovePageRight = onEmptyMenuMovePageRight,
             onDeleteCurrentPage = onEmptyMenuDeleteCurrentPage,
             onDismiss = onDismissEmptyMenu,
             modifier = Modifier.align(Alignment.TopStart),
         )
-    }
-}
 
-@Composable
-private fun HomeDragOverlay(
-    session: HomeDragSession,
-    gridMetrics: PageGridMetrics,
-    dockBounds: Rect,
-    rootPos: Offset,
-    cols: Int,
-    edgeIndicatorDir: Int,
-) {
-    val density = LocalDensity.current
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val secondaryColor = MaterialTheme.colorScheme.secondary
-    val errorColor = MaterialTheme.colorScheme.error
-    val highlightColor = when {
-        !session.canDrop -> errorColor
-        session.isSwapTarget -> secondaryColor
-        else -> primaryColor
-    }
-
-    val sx = session.item.spanX.coerceIn(1, cols)
-    val sy = session.item.spanY.coerceIn(1, HomeGridEngine.HOME_GRID_ROWS)
-
-    Box(
-        contentAlignment = Alignment.TopStart,
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        // Target cell highlight snapped directly to the 2D CellLayout grid or Dock slot + edge-flip cue
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val targetLeft: Float
-            val targetTop: Float
-            val targetW: Float
-            val targetH: Float
-
-            val dockIdx = session.targetDockIndex
-            if (dockIdx != null && dockBounds != Rect.Zero) {
-                val slotCount = session.targetDockSlotCount.coerceAtLeast(1)
-                val slotW = dockBounds.width / slotCount
-                targetLeft = dockBounds.left - rootPos.x + dockIdx * slotW
-                targetTop = dockBounds.top - rootPos.y
-                targetW = slotW
-                targetH = dockBounds.height
-            } else {
-                targetLeft = gridMetrics.gridBounds.left - rootPos.x + session.targetCellX * gridMetrics.colStepPx
-                targetTop = gridMetrics.gridBounds.top - rootPos.y + session.targetCellY * gridMetrics.rowStepPx
-                targetW = sx * gridMetrics.cellWidthPx + (sx - 1) * gridMetrics.colGapPx
-                targetH = sy * gridMetrics.cellHeightPx + (sy - 1) * gridMetrics.rowGapPx
-            }
-            val radius = CornerRadius(16.dp.toPx(), 16.dp.toPx())
-
-            drawRoundRect(
-                color = highlightColor.copy(alpha = 0.16f),
-                topLeft = Offset(targetLeft, targetTop),
-                size = Size(targetW, targetH),
-                cornerRadius = radius,
-            )
-            drawRoundRect(
-                color = highlightColor,
-                topLeft = Offset(targetLeft, targetTop),
-                size = Size(targetW, targetH),
-                cornerRadius = radius,
-                style = Stroke(width = 2.dp.toPx()),
-            )
-
-            if (edgeIndicatorDir != 0) {
-                val barW = 4.dp.toPx()
-                val barH = gridMetrics.gridBounds.height * 0.45f
-                val barTop = gridMetrics.gridBounds.top - rootPos.y + (gridMetrics.gridBounds.height - barH) / 2f
-                val barLeft = if (edgeIndicatorDir < 0) {
-                    (gridMetrics.gridBounds.left - rootPos.x - 10.dp.toPx()).coerceAtLeast(4.dp.toPx())
-                } else {
-                    (gridMetrics.gridBounds.right - rootPos.x + 6.dp.toPx()).coerceAtMost(size.width - barW - 4.dp.toPx())
-                }
-                drawRoundRect(
-                    color = primaryColor.copy(alpha = 0.85f),
-                    topLeft = Offset(barLeft, barTop),
-                    size = Size(barW, barH),
-                    cornerRadius = CornerRadius(barW / 2f, barW / 2f),
-                )
-            }
-        }
-
-        // Floating drag preview tracking finger smoothly in root coordinates
-        val ghostTopLeft = session.pointerWindowPos - session.grabOffsetInItem - rootPos
-        val ghostWidthDp = with(density) { session.itemSizePx.width.coerceAtLeast(48f).toDp() }
-        val ghostHeightDp = with(density) { session.itemSizePx.height.coerceAtLeast(48f).toDp() }
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .offset { IntOffset(ghostTopLeft.x.roundToInt(), ghostTopLeft.y.roundToInt()) }
-                .size(width = ghostWidthDp, height = ghostHeightDp)
-                .graphicsLayer {
-                    scaleX = 1.05f
-                    scaleY = 1.05f
-                    alpha = 0.92f
-                },
-        ) {
-            when (val dragged = session.item) {
-                is DragItem.App -> {
-                    val iconSize = if (cols == 5) 48.dp else 54.dp
-                    AppIconImage(app = dragged.slot.app, size = iconSize)
-                }
-
-                is DragItem.DockApp -> {
-                    AppIconImage(app = dragged.app, size = 50.dp)
-                }
-
-                is DragItem.Widget -> {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.78f),
-                        tonalElevation = 4.dp,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .border(1.5.dp, highlightColor, RoundedCornerShape(16.dp)),
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Text(
-                                text = stringResource(R.string.widget_size_label, sx, sy),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomePageIndicatorBar(
-    pagerState: PagerState,
-    pageCount: Int,
-    loopEnabled: Boolean,
-    overridePageCount: Int? = null,
-    overrideCurrentPage: Int? = null,
-) {
-    val scope = rememberCoroutineScope()
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-    ) {
-        val realCurrent = ((pagerState.currentPage % pageCount) + pageCount) % pageCount
-        val shownCount = overridePageCount ?: pageCount
-        val shownCurrent = overrideCurrentPage ?: realCurrent
-        PageIndicatorDots(
-            pageCount = shownCount,
-            currentPage = shownCurrent,
-            activeColor = Color.White,
-            inactiveColor = Color.White.copy(alpha = 0.38f),
-            onSelectPage = { targetReal ->
-                if (overridePageCount != null) return@PageIndicatorDots
-                scope.launch {
-                    val targetVirtual = if (loopEnabled) {
-                        pagerState.currentPage + (targetReal - realCurrent)
-                    } else {
-                        targetReal
-                    }
-                    pagerState.animateScrollToPage(targetVirtual)
-                }
-            },
-        )
-    }
-}
-
-@Composable
-private fun HomePageContent(
-    isLoading: Boolean,
-    realPage: Int,
-    pageApps: ImmutableList<HomeAppSlot>,
-    pageWidgets: ImmutableList<PlacedWidget>,
-    isPreferredWidgetSlot: Boolean,
-    isCurrentVirtualPage: Boolean,
-    resizingWidgetId: Int?,
-    draggedAppKey: String?,
-    draggedWidgetId: Int?,
-    cols: Int,
-    appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
-    widgetHostController: WidgetHostController,
-    appMenuHost: AppContextMenuHost,
-    widgetMenuHost: WidgetContextMenuHost,
-    onResizingWidgetBoundsChanged: (Rect) -> Unit,
-    onIconDownPointer: (Long, Set<SwipeDirection>) -> Unit,
-    onWidgetTouchDown: (Long?) -> Unit,
-    onAppClick: (AppItem) -> Unit,
-    onAppSwipe: (AppItem, SwipeDirection, AppActionOrigin) -> Unit,
-    onAppDragStart: (HomeAppSlot, Rect, Offset) -> Unit,
-    onAppDragMove: (Offset) -> Unit,
-    onAppDragEnd: (Offset) -> Unit,
-    onAppDragCancel: () -> Unit,
-) {
-    val density = LocalDensity.current
-    val rows = HomeGridEngine.HOME_GRID_ROWS
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = GRID_HORIZONTAL_PAD_DP.dp)
-            .padding(top = GRID_TOP_PAD_DP.dp, bottom = GRID_BOTTOM_PAD_DP.dp),
-    ) {
-        val innerWidthPx = with(density) { maxWidth.toPx() }
-        val innerHeightPx = with(density) { maxHeight.toPx() }
-        val colGapPx = with(density) { CELL_COL_GAP_DP.dp.toPx() }
-        val rowGapPx = with(density) { CELL_ROW_GAP_DP.dp.toPx() }
-        val safeCols = cols.coerceIn(4, 5)
-        val cellWidthPx = ((innerWidthPx - colGapPx * (safeCols - 1)) / safeCols).coerceAtLeast(48f)
-        val cellHeightPx = ((innerHeightPx - rowGapPx * (rows - 1)) / rows).coerceAtLeast(48f)
-        val colStepPx = cellWidthPx + colGapPx
-        val rowStepPx = cellHeightPx + rowGapPx
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            when {
-                isLoading -> {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-                        LoadingIndicator(color = Color.White)
-                    }
-                }
-
-                pageApps.isEmpty() && pageWidgets.isEmpty() -> Unit
-
-                else -> {
-                    val cellHeightDp = with(density) { cellHeightPx.toDp() }
-                    val iconSize = when {
-                        safeCols == 5 || cellHeightDp < 86.dp -> 46.dp
-                        else -> 52.dp
-                    }
-
-                    // 2D CellLayout widgets at exact (cellX, cellY, spanX, spanY)
-                    pageWidgets.forEach { widget ->
-                        key(widget.appWidgetId) {
-                            val sx = widget.spanX.coerceIn(1, safeCols)
-                            val sy = widget.spanY.coerceIn(1, rows)
-                            val cx = widget.cellX.coerceIn(0, (safeCols - sx).coerceAtLeast(0))
-                            val cy = widget.cellY.coerceIn(0, (rows - sy).coerceAtLeast(0))
-                            val leftPx = (cx * colStepPx).roundToInt()
-                            val topPx = (cy * rowStepPx).roundToInt()
-                            val widthDp = with(density) { (sx * cellWidthPx + (sx - 1) * colGapPx).toDp() }
-                            val heightDp = with(density) { (sy * cellHeightPx + (sy - 1) * rowGapPx).toDp() }
-                            val isResizing = isPreferredWidgetSlot && resizingWidgetId == widget.appWidgetId
-                            val isBeingDragged = draggedWidgetId == widget.appWidgetId
-
-                            Box(
-                                modifier = Modifier
-                                    .offset { IntOffset(leftPx, topPx) }
-                                    .size(width = widthDp, height = heightDp)
-                                    .alpha(if (isBeingDragged) 0.25f else 1f),
-                            ) {
-                                HomeWidgetSlot(
-                                    widget = widget,
-                                    isPreferredSlot = isPreferredWidgetSlot,
-                                    isCurrentVirtualPage = isCurrentVirtualPage,
-                                    isResizing = isResizing,
-                                    isBeingDragged = isBeingDragged,
-                                    widgetHostController = widgetHostController,
-                                    onResizingBoundsChanged = onResizingWidgetBoundsChanged,
-                                    onTouchDown = onWidgetTouchDown,
-                                    onLongClick = { widgetMenuHost.onOpen(widget) },
-                                )
-                                WidgetContextMenuDropdown(
-                                    widget = widget,
-                                    expanded = isCurrentVirtualPage && widgetMenuHost.activeWidgetId == widget.appWidgetId,
-                                    cols = safeCols,
-                                    widgetHostController = widgetHostController,
-                                    host = widgetMenuHost,
-                                )
-                            }
-                        }
-                    }
-
-                    // 2D CellLayout app icons at exact (cellX, cellY, 1x1)
-                    pageApps.forEach { slot ->
-                        key(slot.app.componentKey) {
-                            val cx = slot.cellX.coerceIn(0, safeCols - 1)
-                            val cy = slot.cellY.coerceIn(0, rows - 1)
-                            val leftPx = (cx * colStepPx).roundToInt()
-                            val topPx = (cy * rowStepPx).roundToInt()
-                            val widthDp = with(density) { cellWidthPx.toDp() }
-                            val boundDirs = appGestures[slot.app.componentKey]?.keys ?: persistentSetOf()
-                            val isBeingDragged = draggedAppKey == slot.app.componentKey
-                            var isPointerHeld by remember { mutableStateOf(false) }
-
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .offset { IntOffset(leftPx, topPx) }
-                                    .size(width = widthDp, height = cellHeightDp)
-                                    .alpha(if (isBeingDragged) 0.25f else 1f),
-                            ) {
-                                AppIconTile(
-                                    app = slot.app,
-                                    boundDirections = boundDirs,
-                                    showLabel = true,
-                                    onWallpaper = true,
-                                    iconSize = iconSize,
-                                    onDownPointer = onIconDownPointer,
-                                    onClick = { onAppClick(slot.app) },
-                                    onLongClick = {
-                                        appMenuHost.onOpen(slot.app, AppActionOrigin.HOME, realPage)
-                                    },
-                                    onLongPressHoldChanged = { isPointerHeld = it },
-                                    onSwipe = { dir -> onAppSwipe(slot.app, dir, AppActionOrigin.HOME) },
-                                    onDragStart = { bounds, pos -> onAppDragStart(slot, bounds, pos) },
-                                    onDragMove = onAppDragMove,
-                                    onDragEnd = onAppDragEnd,
-                                    onDragCancel = onAppDragCancel,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                AppContextMenuDropdown(
-                                    app = slot.app,
-                                    origin = AppActionOrigin.HOME,
-                                    sourcePageIndex = realPage,
-                                    expanded = isCurrentVirtualPage &&
-                                        appMenuHost.isExpandedFor(slot.app, AppActionOrigin.HOME, realPage),
-                                    host = appMenuHost,
-                                    isPointerHeld = isPointerHeld,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeWidgetSlot(
-    widget: PlacedWidget,
-    isPreferredSlot: Boolean,
-    isCurrentVirtualPage: Boolean,
-    isResizing: Boolean,
-    isBeingDragged: Boolean,
-    widgetHostController: WidgetHostController,
-    onResizingBoundsChanged: (Rect) -> Unit,
-    onTouchDown: (Long?) -> Unit,
-    onLongClick: () -> Unit,
-) {
-    val currentOnTouchDown by rememberUpdatedState(onTouchDown)
-    val currentOnLongClick by rememberUpdatedState(onLongClick)
-    val currentOnResizingBoundsChanged by rememberUpdatedState(onResizingBoundsChanged)
-    val slotCoordsRef = remember { LayoutCoordsRef() }
-
-    val hasProvider = remember(widget.appWidgetId) {
-        widgetHostController.getProviderInfo(widget.appWidgetId) != null
-    }
-
-    LaunchedEffect(isResizing, isBeingDragged, widget.cellX, widget.cellY, widget.spanX, widget.spanY) {
-        if (isResizing && !isBeingDragged) {
-            slotCoordsRef.coords?.takeIf { it.isAttached }?.let {
-                currentOnResizingBoundsChanged(it.boundsInWindow())
-            }
-        }
-    }
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coords ->
-                slotCoordsRef.coords = coords
-                if (isResizing && !isBeingDragged && coords.isAttached) {
-                    currentOnResizingBoundsChanged(coords.boundsInWindow())
-                }
-            }
-            .pointerInput(widget.appWidgetId) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    currentOnTouchDown(down.id.value)
-                }
-            }
-            .testTag("home_widget_${widget.appWidgetId}"),
-    ) {
-        val widthDp = maxWidth.value.toInt().coerceAtLeast(48)
-        val heightDp = maxHeight.value.toInt().coerceAtLeast(48)
-        if (hasProvider) {
-            key(widget.appWidgetId) {
-                AndroidView(
-                    factory = { ctx ->
-                        android.widget.FrameLayout(ctx).apply {
-                            clipChildren = false
-                            clipToPadding = false
-                            if ((isPreferredSlot || isCurrentVirtualPage) && !isBeingDragged) {
-                                widgetHostController.attachViewToContainer(widget.appWidgetId, this)?.apply {
-                                    onTouchDownListener = { currentOnTouchDown(null) }
-                                    onLongPressListener = { _ -> currentOnLongClick() }
-                                    updateSizeDpIfNeeded(widthDp, heightDp)
-                                }
-                            }
-                        }
-                    },
-                    update = { container ->
-                        if ((isPreferredSlot || isCurrentVirtualPage) && !isBeingDragged) {
-                            widgetHostController.attachViewToContainer(widget.appWidgetId, container)?.apply {
-                                onTouchDownListener = { currentOnTouchDown(null) }
-                                onLongPressListener = { _ -> currentOnLongClick() }
-                                updateSizeDpIfNeeded(widthDp, heightDp)
-                            }
-                        }
-                    },
-                    onRelease = { container ->
-                        container.removeAllViews()
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        } else {
+        if (dragSession != null) {
+            val overRemove = dragSession?.isOverRemoveZone == true
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(999.dp),
+                color = if (overRemove) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.94f)
+                },
+                tonalElevation = 6.dp,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(16.dp))
-                    .pointerInput(widget.appWidgetId) {
-                        detectTapGestures(
-                            onLongPress = { currentOnLongClick() },
-                        )
-                    },
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 6.dp)
+                    .onGloballyPositioned { coords ->
+                        if (coords.isAttached) removeZoneBounds = coords.boundsInWindow()
+                    }
+                    .testTag("home_drag_remove_zone"),
             ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                ) {
+                    val contentColor = if (overRemove) {
+                        MaterialTheme.colorScheme.onError
+                    } else {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    }
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Text(
-                        text = stringResource(R.string.widget_unavailable_label),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = stringResource(R.string.home_drag_remove_zone),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = contentColor,
                     )
                 }
             }
+        } else if (isHomeEditMode) {
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+                tonalElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 6.dp)
+                    .testTag("home_edit_mode_banner"),
+            ) {
+                Text(
+                    text = stringResource(R.string.home_edit_mode_banner),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }
+
+
+

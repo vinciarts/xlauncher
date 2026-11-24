@@ -45,6 +45,10 @@
 
     <!-- Settings -->
     <string name="settings_title">Home settings</string>
+    <string name="settings_tab_general">General</string>
+    <string name="settings_tab_layout">Layout</string>
+    <string name="settings_tab_gesture">Gesture</string>
+    <string name="settings_tab_search">Search</string>
     <string name="settings_default_launcher">Default home app</string>
     <string name="settings_default_yes">Set as default home app</string>
     <string name="settings_default_no">Not set as default</string>
@@ -54,6 +58,7 @@
     <string name="settings_home_pages">Pages</string>
     <string name="settings_home_loop">Infinite loop scrolling</string>
     <string name="settings_home_columns">Columns</string>
+    <string name="settings_home_rows">Rows</string>
     <string name="grid_columns_option">%1$d cols</string>
     <string name="grid_rows_option">%1$d rows</string>
 
@@ -138,9 +143,14 @@
     <!-- Desktop Empty Space Menu & Widgets -->
     <string name="home_menu_add_widget">Widgets</string>
     <string name="home_menu_wallpaper">Wallpaper</string>
+    <string name="home_menu_edit_layout">Edit layout</string>
+    <string name="home_edit_mode_banner">Editing layout · Tap empty space to exit</string>
+    <string name="home_drag_remove_zone">Remove</string>
     <string name="home_menu_settings">Home settings</string>
     <string name="home_menu_add_page_start">Add page at start</string>
     <string name="home_menu_add_page_end">Add page at end</string>
+    <string name="home_menu_move_page_left">Move page left</string>
+    <string name="home_menu_move_page_right">Move page right</string>
     <string name="home_menu_delete_page">Delete current page</string>
     <string name="home_pages_limit_message">Up to %1$d Home pages allowed</string>
     <string name="drag_new_page_hint">Release to create new page</string>

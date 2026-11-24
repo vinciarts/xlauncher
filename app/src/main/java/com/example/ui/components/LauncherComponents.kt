@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -49,6 +50,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -513,8 +515,8 @@ internal class ExpressiveMenuItemSpec(
 )
 
 /**
- * Renders segmented Material 3 Expressive [DropdownMenuGroup] sections inside a [DropdownMenuPopup],
- * including optional official cascading submenus via nested [DropdownMenuPopup].
+ * Renders segmented Material 3 Expressive [DropdownMenuGroup] sections inside a [DropdownMenuPopup].
+ * Submenus replace the menu content in-place with a back header instead of stacking another popup.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -523,49 +525,71 @@ internal fun ExpressiveMenuGroupsContent(
     parentExpanded: Boolean,
     onActionClicked: () -> Unit = {},
 ) {
-    val nonEmptyGroups = groups.filter { it.isNotEmpty() }
+    var submenuStack by remember {
+        mutableStateOf<List<Pair<@Composable () -> Unit, List<List<ExpressiveMenuItemSpec>>>>>(emptyList())
+    }
+    var wasExpanded by remember { mutableStateOf(false) }
+    val openingFresh = parentExpanded && !wasExpanded
+    val effectiveStack = if (openingFresh) emptyList() else submenuStack
+    SideEffect {
+        if (openingFresh && submenuStack.isNotEmpty()) {
+            submenuStack = emptyList()
+        }
+        wasExpanded = parentExpanded
+    }
+
+    val activeSubmenu = effectiveStack.lastOrNull()
+    val rawGroups = activeSubmenu?.second ?: groups
+    val nonEmptyGroups = rawGroups.filter { it.isNotEmpty() }
+    val totalGroups = nonEmptyGroups.size + if (activeSubmenu != null) 1 else 0
+
+    if (activeSubmenu != null) {
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(0, totalGroups),
+        ) {
+            DropdownMenuItem(
+                text = activeSubmenu.first,
+                onClick = { submenuStack = submenuStack.dropLast(1) },
+                shape = MenuDefaults.itemShape(0, 1).shape,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.cd_back),
+                    )
+                },
+                colors = MenuDefaults.itemColors(),
+                modifier = Modifier.testTag("menu_submenu_back"),
+            )
+        }
+    }
+
+    val groupOffset = if (activeSubmenu != null) 1 else 0
     nonEmptyGroups.forEachIndexed { groupIndex, items ->
-        if (groupIndex > 0) {
+        val effectiveGroupIndex = groupIndex + groupOffset
+        if (effectiveGroupIndex > 0) {
             Spacer(modifier = Modifier.height(MenuDefaults.GroupSpacing))
         }
         DropdownMenuGroup(
-            shapes = MenuDefaults.groupShape(groupIndex, nonEmptyGroups.size),
+            shapes = MenuDefaults.groupShape(effectiveGroupIndex, totalGroups),
         ) {
             items.forEachIndexed { itemIndex, item ->
                 val itemShape = MenuDefaults.itemShape(itemIndex, items.size).shape
                 val submenu = item.submenuGroups?.filter { it.isNotEmpty() }
                 if (!submenu.isNullOrEmpty()) {
-                    var submenuExpanded by remember(parentExpanded) { mutableStateOf(false) }
-                    Box {
-                        DropdownMenuItem(
-                            text = item.text,
-                            onClick = { submenuExpanded = !submenuExpanded },
-                            shape = itemShape,
-                            leadingIcon = item.leadingIcon,
-                            trailingIcon = item.trailingIcon ?: {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.ArrowRight,
-                                    contentDescription = null,
-                                )
-                            },
-                            colors = item.colors ?: MenuDefaults.itemColors(),
-                            modifier = if (item.testTag != null) Modifier.testTag(item.testTag) else Modifier,
-                        )
-                        DropdownMenuPopup(
-                            expanded = parentExpanded && submenuExpanded,
-                            onDismissRequest = { submenuExpanded = false },
-                            properties = PopupProperties(focusable = true),
-                        ) {
-                            ExpressiveMenuGroupsContent(
-                                groups = submenu,
-                                parentExpanded = parentExpanded && submenuExpanded,
-                                onActionClicked = {
-                                    submenuExpanded = false
-                                    onActionClicked()
-                                },
+                    DropdownMenuItem(
+                        text = item.text,
+                        onClick = { submenuStack = submenuStack + (item.text to submenu) },
+                        shape = itemShape,
+                        leadingIcon = item.leadingIcon,
+                        trailingIcon = item.trailingIcon ?: {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowRight,
+                                contentDescription = null,
                             )
-                        }
-                    }
+                        },
+                        colors = item.colors ?: MenuDefaults.itemColors(),
+                        modifier = if (item.testTag != null) Modifier.testTag(item.testTag) else Modifier,
+                    )
                 } else {
                     DropdownMenuItem(
                         text = item.text,
@@ -779,61 +803,37 @@ fun AppContextMenuDropdown(
                 )
             }
 
-            when (origin) {
-                AppActionOrigin.HOME -> {
-                    add(
-                        ExpressiveMenuItemSpec(
-                            text = { Text(text = stringResource(R.string.action_unpin_home)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
-                            testTag = "menu_unpin_home",
-                            onClick = { host.onRemoveFromHomePage(app, sourcePageIndex) },
-                        )
+            if (origin == AppActionOrigin.DRAWER) {
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.action_pin_home)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
+                        testTag = "menu_pin_home",
+                        onClick = { host.onPinToCurrentHomePage(app) },
                     )
-                }
-
-                AppActionOrigin.DOCK -> {
-                    add(
-                        ExpressiveMenuItemSpec(
-                            text = { Text(text = stringResource(R.string.action_unpin_home)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Close, contentDescription = null) },
-                            testTag = "menu_toggle_dock",
-                            onClick = { host.onTogglePinDock(app) },
-                        )
-                    )
-                }
-
-                AppActionOrigin.DRAWER -> {
-                    add(
-                        ExpressiveMenuItemSpec(
-                            text = { Text(text = stringResource(R.string.action_pin_home)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Home, contentDescription = null) },
-                            testTag = "menu_pin_home",
-                            onClick = { host.onPinToCurrentHomePage(app) },
-                        )
-                    )
-                    add(
-                        ExpressiveMenuItemSpec(
-                            text = {
-                                Text(
-                                    text = stringResource(
-                                        if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
-                                    )
+                )
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = {
+                            Text(
+                                text = stringResource(
+                                    if (isPinnedDock) R.string.action_unpin_dock else R.string.action_pin_dock
                                 )
-                            },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
-                            testTag = "menu_toggle_dock",
-                            onClick = { host.onTogglePinDock(app) },
-                        )
+                            )
+                        },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Dock, contentDescription = null) },
+                        testTag = "menu_toggle_dock",
+                        onClick = { host.onTogglePinDock(app) },
                     )
-                    add(
-                        ExpressiveMenuItemSpec(
-                            text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
-                            leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
-                            testTag = "menu_drawer_tabs",
-                            onClick = { host.onOpenDrawerTabs(app) },
-                        )
+                )
+                add(
+                    ExpressiveMenuItemSpec(
+                        text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
+                        leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
+                        testTag = "menu_drawer_tabs",
+                        onClick = { host.onOpenDrawerTabs(app) },
                     )
-                }
+                )
             }
         }
 
