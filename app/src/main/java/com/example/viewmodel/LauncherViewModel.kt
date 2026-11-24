@@ -40,9 +40,11 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -53,6 +55,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val _actionHapticEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val actionHapticEvents = _actionHapticEvents.asSharedFlow()
+
+    private fun emitActionHaptic() {
+        _actionHapticEvents.tryEmit(Unit)
+    }
 
     private val appRepository = AppRepository(application)
     private val prefsRepository = LauncherPreferencesRepository(application)
@@ -510,19 +519,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         currentHomePage.value = realPageIndex
     }
 
-    fun openDrawer(focusSearch: Boolean = false) {
+    fun openDrawer(focusSearch: Boolean = false, haptic: Boolean = true) {
+        val wasDrawerOpen = destination.value == LauncherDestination.DRAWER
         isHomeEditMode.value = false
         resizingWidgetId.value = null
         searchQuery.value = ""
         autoFocusSearch.value = focusSearch
         destination.value = LauncherDestination.DRAWER
+        if (haptic && !wasDrawerOpen) {
+            emitActionHaptic()
+        }
     }
 
     fun clearAutoFocusSearch() {
         autoFocusSearch.value = false
     }
 
-    fun openSettings() {
+    fun openSettings(haptic: Boolean = true) {
+        val wasSettings = destination.value == LauncherDestination.SETTINGS
         clearAppMenuState()
         homeEmptyMenuAnchor.value = null
         widgetMenuId.value = null
@@ -530,6 +544,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         resizingWidgetId.value = null
         refreshDefaultLauncherStatus()
         destination.value = LauncherDestination.SETTINGS
+        if (haptic && !wasSettings) {
+            emitActionHaptic()
+        }
     }
 
     fun handleHomeButton(alreadyInForeground: Boolean) {
@@ -546,13 +563,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             moveWidgetTarget.value == null
 
         if (isCleanHome) {
-            executeHomeAction(uiState.value.settings.homeButtonAction)
+            executeHomeAction(uiState.value.settings.homeButtonAction, haptic = false)
         } else {
-            returnHome(resetToFirstPage = false)
+            returnHome(resetToFirstPage = false, haptic = false)
         }
     }
 
-    fun returnHome(resetToFirstPage: Boolean = false) {
+    fun returnHome(resetToFirstPage: Boolean = false, haptic: Boolean = false) {
+        val wasDrawerOpen = destination.value == LauncherDestination.DRAWER
         searchQuery.value = ""
         autoFocusSearch.value = false
         clearAppMenuState()
@@ -566,6 +584,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         moveWidgetTarget.value = null
         widgetPickerPackageFilter.value = null
         destination.value = LauncherDestination.HOME
+        if (haptic && wasDrawerOpen) {
+            emitActionHaptic()
+        }
         if (resetToFirstPage) {
             dispatchHomePageCommand(HomePageCommandType.FIRST_PAGE)
         }
@@ -673,11 +694,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         if (targetKey != null) {
             val shortcutRef = AppShortcutItem.parseTargetKey(targetKey)
             if (shortcutRef != null) {
+                emitActionHaptic()
                 launchShortcut(shortcutRef.first, shortcutRef.second)
                 return
             }
             val targetApp = state.appsByKey[targetKey]
             if (targetApp != null) {
+                emitActionHaptic()
                 launchApp(targetApp)
                 return
             }
@@ -704,43 +727,58 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         executeHomeAction(action)
     }
 
-    private fun executeHomeAction(action: HomeGestureAction) {
+    private fun executeHomeAction(action: HomeGestureAction, haptic: Boolean = true) {
         val state = uiState.value
         when (action) {
             HomeGestureAction.None -> Unit
-            HomeGestureAction.OpenDrawer -> openDrawer(focusSearch = false)
-            HomeGestureAction.OpenSearch -> openDrawer(focusSearch = true)
-            HomeGestureAction.OpenSettings -> openSettings()
-            HomeGestureAction.GoFirstPage -> returnHome(resetToFirstPage = true)
-            HomeGestureAction.PrevHomePage -> dispatchHomePageCommand(HomePageCommandType.PREV_PAGE)
-            HomeGestureAction.NextHomePage -> dispatchHomePageCommand(HomePageCommandType.NEXT_PAGE)
+            HomeGestureAction.OpenDrawer -> openDrawer(focusSearch = false, haptic = haptic)
+            HomeGestureAction.OpenSearch -> openDrawer(focusSearch = true, haptic = haptic)
+            HomeGestureAction.OpenSettings -> openSettings(haptic = haptic)
+            HomeGestureAction.GoFirstPage -> {
+                if (haptic) emitActionHaptic()
+                returnHome(resetToFirstPage = true, haptic = false)
+            }
+            HomeGestureAction.PrevHomePage -> {
+                if (haptic) emitActionHaptic()
+                dispatchHomePageCommand(HomePageCommandType.PREV_PAGE)
+            }
+            HomeGestureAction.NextHomePage -> {
+                if (haptic) emitActionHaptic()
+                dispatchHomePageCommand(HomePageCommandType.NEXT_PAGE)
+            }
             HomeGestureAction.ExpandNotifications -> {
-                if (!appRepository.expandNotificationsPanel()) {
+                if (appRepository.expandNotificationsPanel()) {
+                    if (haptic) emitActionHaptic()
+                } else {
                     snackbarMessage.value = getApplication<Application>().getString(R.string.expand_status_bar_error)
                 }
             }
             HomeGestureAction.ExpandQuickSettings -> {
-                if (!appRepository.expandQuickSettingsPanel()) {
+                if (appRepository.expandQuickSettingsPanel()) {
+                    if (haptic) emitActionHaptic()
+                } else {
                     snackbarMessage.value = getApplication<Application>().getString(R.string.expand_status_bar_error)
                 }
             }
-            HomeGestureAction.ToggleFlashlight -> runSystemAction { appRepository.toggleFlashlight() }
-            HomeGestureAction.OpenVolumePanel -> runSystemAction { appRepository.openVolumePanel() }
-            HomeGestureAction.ToggleVibrateMode -> runSystemAction { appRepository.toggleVibrateMode() }
-            HomeGestureAction.OpenVoiceAssist -> runSystemAction { appRepository.openVoiceAssist() }
-            HomeGestureAction.OpenCamera -> runSystemAction { appRepository.openCamera() }
-            HomeGestureAction.OpenDialer -> runSystemAction { appRepository.openDialer() }
-            HomeGestureAction.OpenSystemSettings -> runSystemAction { appRepository.openSystemSettings() }
-            HomeGestureAction.OpenWifiPanel -> runSystemAction { appRepository.openWifiPanel() }
-            HomeGestureAction.OpenBluetoothSettings -> runSystemAction { appRepository.openBluetoothSettings() }
-            HomeGestureAction.OpenWallpaperPicker -> runSystemAction { appRepository.openWallpaperPicker() }
+            HomeGestureAction.ToggleFlashlight -> runSystemAction(haptic) { appRepository.toggleFlashlight() }
+            HomeGestureAction.OpenVolumePanel -> runSystemAction(haptic) { appRepository.openVolumePanel() }
+            HomeGestureAction.ToggleVibrateMode -> runSystemAction(haptic) { appRepository.toggleVibrateMode() }
+            HomeGestureAction.OpenVoiceAssist -> runSystemAction(haptic) { appRepository.openVoiceAssist() }
+            HomeGestureAction.OpenCamera -> runSystemAction(haptic) { appRepository.openCamera() }
+            HomeGestureAction.OpenDialer -> runSystemAction(haptic) { appRepository.openDialer() }
+            HomeGestureAction.OpenSystemSettings -> runSystemAction(haptic) { appRepository.openSystemSettings() }
+            HomeGestureAction.OpenWifiPanel -> runSystemAction(haptic) { appRepository.openWifiPanel() }
+            HomeGestureAction.OpenBluetoothSettings -> runSystemAction(haptic) { appRepository.openBluetoothSettings() }
+            HomeGestureAction.OpenWallpaperPicker -> runSystemAction(haptic) { appRepository.openWallpaperPicker() }
             is HomeGestureAction.LaunchApp -> {
                 val targetApp = state.appsByKey[action.componentKey]
                 if (targetApp != null) {
+                    if (haptic) emitActionHaptic()
                     launchApp(targetApp)
                 }
             }
             is HomeGestureAction.LaunchShortcut -> {
+                if (haptic) emitActionHaptic()
                 launchShortcut(action.packageName, action.shortcutId)
             }
         }
@@ -762,8 +800,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun runSystemAction(block: () -> Boolean) {
-        if (!block()) {
+    private fun runSystemAction(haptic: Boolean = true, block: () -> Boolean) {
+        if (block()) {
+            if (haptic) emitActionHaptic()
+        } else {
             snackbarMessage.value = getApplication<Application>().getString(R.string.system_action_unavailable)
         }
     }

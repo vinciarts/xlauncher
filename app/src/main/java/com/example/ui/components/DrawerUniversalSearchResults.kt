@@ -78,6 +78,7 @@ fun DrawerUniversalSearchResults(
     onOpenFile: (FileSearchResult) -> Unit,
     onLaunchThirdPartySearch: (SearchProviderApp, String) -> Unit,
     onLaunchWebSearch: (String) -> Unit,
+    onAtTopChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val trimmedQuery = query.trim()
@@ -88,6 +89,7 @@ fun DrawerUniversalSearchResults(
         (searchWebEnabled && trimmedQuery.isNotEmpty())
 
     if (apps.isEmpty() && !hasExtraResults) {
+        androidx.compose.runtime.LaunchedEffect(Unit) { onAtTopChanged(true) }
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier.fillMaxWidth(),
@@ -108,6 +110,10 @@ fun DrawerUniversalSearchResults(
     val iconSize = if (cols == 5) 48.dp else 52.dp
     val segmentedColors = ListItemDefaults.segmentedColors()
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    androidx.compose.runtime.LaunchedEffect(gridState) {
+        androidx.compose.runtime.snapshotFlow { !gridState.canScrollBackward }
+            .collect { onAtTopChanged(it) }
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),

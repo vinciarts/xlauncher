@@ -39,6 +39,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -57,6 +58,7 @@ import com.example.ui.screens.AppDrawerScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.WidgetPickerScreen
+import com.example.ui.screens.performGestureTriggerHaptic
 import com.example.ui.theme.QingfengLauncherTheme
 import com.example.viewmodel.LauncherViewModel
 import com.example.widget.WidgetHostController
@@ -372,7 +374,15 @@ private fun LauncherRoot(
         viewModel.consumeSnackbar()
     }
 
+    val hostView = LocalView.current
+    LaunchedEffect(viewModel, hostView) {
+        viewModel.actionHapticEvents.collect {
+            hostView.performGestureTriggerHaptic()
+        }
+    }
+
     val isDrawerOpen = uiState.destination == LauncherDestination.DRAWER
+    var lastDrawerTabId by remember { mutableStateOf(com.example.model.DrawerTab.ALL_TAB_ID) }
     val motionScheme = MaterialTheme.motionScheme
     val drawerProgressState = animateFloatAsState(
         targetValue = if (isDrawerOpen) 1f else 0f,
@@ -490,22 +500,12 @@ private fun LauncherRoot(
             onDismissEmptyMenu = viewModel::dismissHomeEmptyMenu,
         )
 
-        // Layer 1: AppDrawer stays warm in memory once apps load; unplaced (0 draw / 0 touch cost) when closed,
-        // and animated purely on the GPU via graphicsLayer when opening/closing.
-        if (!uiState.isLoading) {
+        // Layer 1: AppDrawer mounted while open/animating and disposed cleanly on close
+        // so LazyVerticalGrid scroll/pointer state never gets stuck across reopen.
+        if (!uiState.isLoading && isDrawerPlaced) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        if (isDrawerPlaced) {
-                            layout(placeable.width, placeable.height) {
-                                placeable.place(0, 0)
-                            }
-                        } else {
-                            layout(0, 0) {}
-                        }
-                    }
                     .graphicsLayer {
                         val p = drawerProgressState.value
                         alpha = p
@@ -528,7 +528,10 @@ private fun LauncherRoot(
                     drawerSearchQuery = uiState.drawerSearchQuery,
                     autoFocusDrawerSearch = uiState.autoFocusDrawerSearch,
                     drawerColumns = uiState.settings.drawerColumns,
-                    onClose = { viewModel.returnHome() },
+                    selectedTabId = lastDrawerTabId,
+                    onSelectedTabChange = { lastDrawerTabId = it },
+                    onClose = { viewModel.returnHome(haptic = true) },
+                    onBack = { viewModel.returnHome(haptic = false) },
                     onSearchQueryChange = viewModel::updateSearchQuery,
                     onAutoFocusConsumed = viewModel::clearAutoFocusSearch,
                     onAppClick = viewModel::launchApp,

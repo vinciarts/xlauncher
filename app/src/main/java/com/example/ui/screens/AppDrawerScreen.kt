@@ -44,11 +44,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -56,6 +58,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
@@ -108,7 +112,10 @@ fun AppDrawerScreen(
     drawerSearchQuery: String,
     autoFocusDrawerSearch: Boolean,
     drawerColumns: Int,
+    selectedTabId: String = DrawerTab.ALL_TAB_ID,
+    onSelectedTabChange: (String) -> Unit = {},
     onClose: () -> Unit,
+    onBack: () -> Unit = onClose,
     onSearchQueryChange: (String) -> Unit,
     onAutoFocusConsumed: () -> Unit,
     onAppClick: (AppItem) -> Unit,
@@ -127,7 +134,7 @@ fun AppDrawerScreen(
     onDeleteTab: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BackHandler(enabled = isActive, onBack = onClose)
+    BackHandler(enabled = isActive, onBack = onBack)
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -144,10 +151,10 @@ fun AppDrawerScreen(
     }
 
     val context = LocalContext.current
-    val view = LocalView.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val currentOnClose by rememberUpdatedState(onClose)
+    val currentIsActive by rememberUpdatedState(isActive)
     val viewConfig = remember(context) { ViewConfiguration.get(context) }
     val pagingTouchSlopPx = viewConfig.scaledPagingTouchSlop.toFloat()
     val minFlingVelocityPx = viewConfig.scaledMinimumFlingVelocity.toFloat()
@@ -170,24 +177,27 @@ fun AppDrawerScreen(
     var showCreateTabDialog by remember { mutableStateOf(false) }
     var editingTabId by remember { mutableStateOf<String?>(null) }
     var pendingSelectNewTabFromCount by remember { mutableStateOf<Int?>(null) }
-    var lastSelectedTabId by remember { mutableStateOf(DrawerTab.ALL_TAB_ID) }
+    var lastSelectedTabId by remember { mutableStateOf(selectedTabId) }
+    val pageAtTopMap = remember { mutableStateMapOf<Int, Boolean>() }
+    var searchAtTop by remember { mutableStateOf(true) }
+    var currentIsListAtTop by remember { mutableStateOf(true) }
 
-    // Uniform one-shot pull-down-to-close matching HomeScreen swipe threshold & fling velocity.
-    val pullFromTopDismiss = remember(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
+    // Mutually exclusive pull-down-to-close:
+    // Only if the list was ALREADY at the top when the finger touched down (startedAtTop == true)
+    // can pulling down close the drawer; otherwise the entire gesture is strictly list scrolling.
+    val pullFromTopDismiss = remember(minFlingVelocityPx, instantTriggerPx) {
         object : NestedScrollConnection {
-            private var gestureScrolledList = false
-            private var accumulatedDown = 0f
-            private var triggered = false
+            private var startedAtTop = false
+            private var overScrollDown = 0f
 
-            fun reset() {
-                gestureScrolledList = false
-                accumulatedDown = 0f
-                triggered = false
+            fun onTouchDown(isAtTop: Boolean) {
+                startedAtTop = isAtTop
+                overScrollDown = 0f
             }
 
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && available.y < 0f) {
-                    accumulatedDown = (accumulatedDown + available.y).coerceAtLeast(0f)
+                if (available.y < 0f) {
+                    overScrollDown = 0f
                 }
                 return Offset.Zero
             }
@@ -197,18 +207,18 @@ fun AppDrawerScreen(
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
+                if (!currentIsActive || !startedAtTop) return Offset.Zero
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
                 if (consumed.y != 0f) {
-                    gestureScrolledList = true
-                    accumulatedDown = 0f
+                    // User scrolled the list in this gesture -> lock out dismiss until next touch
+                    startedAtTop = false
+                    overScrollDown = 0f
                     return Offset.Zero
                 }
-                if (!gestureScrolledList && !triggered && available.y > 0f) {
-                    accumulatedDown += available.y
-                    if (accumulatedDown >= instantTriggerPx) {
-                        triggered = true
-                        accumulatedDown = 0f
-                        view.performGestureTriggerHaptic()
+                if (available.y > 0f) {
+                    overScrollDown += available.y
+                    if (overScrollDown >= instantTriggerPx) {
+                        overScrollDown = 0f
                         currentOnClose()
                         return Offset(0f, available.y)
                     }
@@ -217,51 +227,38 @@ fun AppDrawerScreen(
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (triggered) {
-                    return available
-                }
-                val cancelledByUpFling = available.y <= -minFlingVelocityPx
-                if (!gestureScrolledList &&
-                    !cancelledByUpFling &&
-                    (accumulatedDown >= pagingTouchSlopPx || available.y >= minFlingVelocityPx)
-                ) {
-                    triggered = true
-                    accumulatedDown = 0f
-                    view.performGestureTriggerHaptic()
+                if (!currentIsActive || !startedAtTop) return Velocity.Zero
+                if (overScrollDown > 0f && available.y >= minFlingVelocityPx) {
+                    overScrollDown = 0f
                     currentOnClose()
                     return available
                 }
+                overScrollDown = 0f
                 return Velocity.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                reset()
+                overScrollDown = 0f
                 return Velocity.Zero
             }
         }
     }
 
-    // Reset nested-scroll dismiss state whenever drawer visibility changes so an aborted close
-    // never leaves triggered/accumulatedDown stuck across reopen.
-    LaunchedEffect(isActive, pullFromTopDismiss) {
-        pullFromTopDismiss.reset()
-    }
-
-    val directPullDownModifier = Modifier.pointerInput(view, pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
+    val directPullDownModifier = Modifier.pointerInput(pagingTouchSlopPx, minFlingVelocityPx, instantTriggerPx) {
         var dragY = 0f
         var triggered = false
         val velocityTracker = VelocityTracker()
         detectVerticalDragGestures(
             onDragStart = {
                 dragY = 0f
-                triggered = false
+                triggered = !currentIsActive
                 velocityTracker.resetTracking()
             },
             onDragEnd = {
-                if (!triggered) {
+                if (!triggered && currentIsActive) {
                     val velocityY = velocityTracker.calculateVelocity().y
                     if (dragY >= pagingTouchSlopPx || velocityY >= minFlingVelocityPx) {
-                        view.performGestureTriggerHaptic()
+                        triggered = true
                         currentOnClose()
                     }
                 }
@@ -277,9 +274,8 @@ fun AppDrawerScreen(
             onVerticalDrag = { change, dragAmount ->
                 dragY += dragAmount
                 velocityTracker.addPosition(change.uptimeMillis, change.position)
-                if (!triggered && dragY >= instantTriggerPx) {
+                if (!triggered && currentIsActive && dragY >= instantTriggerPx) {
                     triggered = true
-                    view.performGestureTriggerHaptic()
                     currentOnClose()
                 }
             },
@@ -324,6 +320,13 @@ fun AppDrawerScreen(
 
         LaunchedEffect(currentTabPage.id) {
             lastSelectedTabId = currentTabPage.id
+            onSelectedTabChange(currentTabPage.id)
+        }
+
+        currentIsListAtTop = if (drawerSearchQuery.isNotBlank()) {
+            searchAtTop
+        } else {
+            currentTabPage.apps.isEmpty() || (pageAtTopMap[currentPageIndex] != false)
         }
 
         Box(
@@ -331,6 +334,16 @@ fun AppDrawerScreen(
             modifier = modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
+                .pointerInput(pullFromTopDismiss) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.changes.any { it.changedToDownIgnoreConsumed() }) {
+                                pullFromTopDismiss.onTouchDown(currentIsListAtTop)
+                            }
+                        }
+                    }
+                }
                 .nestedScroll(pullFromTopDismiss),
         ) {
             Column(
@@ -381,6 +394,7 @@ fun AppDrawerScreen(
                         onOpenFile = onOpenFile,
                         onLaunchThirdPartySearch = onLaunchThirdPartySearch,
                         onLaunchWebSearch = onLaunchWebSearch,
+                        onAtTopChanged = { searchAtTop = it },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -434,6 +448,7 @@ fun AppDrawerScreen(
                                 isCurrentPage = virtualPage == pagerState.currentPage,
                                 onAppClick = onAppClick,
                                 appMenuHost = appMenuHost,
+                                onAtTopChanged = { atTop -> pageAtTopMap[realPage] = atTop },
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -573,15 +588,14 @@ private fun DrawerAppsVerticalGrid(
     isCurrentPage: Boolean,
     onAppClick: (AppItem) -> Unit,
     appMenuHost: AppContextMenuHost,
+    onAtTopChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val iconSize = if (cols == 5) 48.dp else 52.dp
     val gridState = rememberLazyGridState()
-    LaunchedEffect(isActive) {
-        if (!isActive) {
-            // Cancel any stuck fling/scroll lock when the drawer is unplaced on close.
-            gridState.scroll(MutatePriority.PreventUserInput) {}
-        }
+    LaunchedEffect(gridState) {
+        snapshotFlow { !gridState.canScrollBackward }
+            .collect { onAtTopChanged(it) }
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),

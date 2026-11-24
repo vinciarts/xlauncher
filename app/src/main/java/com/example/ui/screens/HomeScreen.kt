@@ -676,7 +676,6 @@ fun HomeScreen(
                                         SwipeDirection.RIGHT -> velocity.x
                                     }
                                     if (directionalDist >= pagingTouchSlopPx || directionalVelocity >= minFlingVelocityPx) {
-                                        view.performGestureTriggerHaptic()
                                         currentOnHomeSwipe(dir)
                                     }
                                 }
@@ -718,7 +717,6 @@ fun HomeScreen(
                                 }
                                 if (directionalDist >= instantTriggerPx) {
                                     triggered = true
-                                    view.performGestureTriggerHaptic()
                                     currentOnHomeSwipe(dir)
                                 }
                             }
