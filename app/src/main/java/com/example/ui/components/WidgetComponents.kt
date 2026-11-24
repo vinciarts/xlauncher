@@ -353,7 +353,8 @@ fun WidgetResizeFrameOverlay(
 
     val frameCoordsRef = remember { HandleCoordsRef() }
     var activeEdge by remember(widget.appWidgetId) { mutableStateOf<ResizeEdge?>(null) }
-    var residualPx by remember(widget.appWidgetId) { mutableFloatStateOf(0f) }
+    var dragDeltaPx by remember(widget.appWidgetId) { mutableFloatStateOf(0f) }
+    var dragStartRect by remember(widget.appWidgetId) { mutableStateOf<WidgetGridRect?>(null) }
 
     val safeColStep = colStepPx.coerceAtLeast(36f)
     val safeRowStep = rowStepPx.coerceAtLeast(36f)
@@ -450,14 +451,17 @@ fun WidgetResizeFrameOverlay(
                                     if (totalDelta.getDistance() <= touchSlop) continue
                                     didDragBorder = true
                                     activeEdge = hitEdge
-                                    residualPx = 0f
+                                    dragStartRect = start
+                                    dragDeltaPx = 0f
                                 }
 
-                                val limit = stepPx * 0.45f
                                 when (hitEdge) {
                                     ResizeEdge.RIGHT -> {
                                         val signedDx = totalDelta.x
                                         val maxAllowedSpan = minOf(effMaxX, cols - start.cellX)
+                                        val maxReachableSpan = stepTowardValue(start.spanX, maxAllowedSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, start.cellY, cand, start.spanY)
+                                        }
                                         val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
                                             .coerceIn(effMinX, maxAllowedSpan)
                                         val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
@@ -468,18 +472,17 @@ fun WidgetResizeFrameOverlay(
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
                                         }
-                                        val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
-                                        val blocked = acceptedSpan != desiredSpan
-                                        residualPx = if (blocked) {
-                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                        } else {
-                                            rawResidual.coerceIn(-limit, limit)
-                                        }
+                                        val minDelta = -(start.spanX - effMinX) * stepPx
+                                        val maxDelta = (maxReachableSpan - start.spanX) * stepPx
+                                        dragDeltaPx = signedDx.coerceIn(minDelta, maxDelta)
                                     }
 
                                     ResizeEdge.LEFT -> {
                                         val signedDx = -totalDelta.x
                                         val maxAllowedSpan = minOf(effMaxX, anchorRight)
+                                        val maxReachableSpan = stepTowardValue(start.spanX, maxAllowedSpan) { cand ->
+                                            currentCanPlaceRect(anchorRight - cand, start.cellY, cand, start.spanY)
+                                        }
                                         val desiredSpan = (start.spanX + (signedDx / stepPx).roundToInt())
                                             .coerceIn(effMinX, maxAllowedSpan)
                                         val acceptedSpan = stepTowardValue(latest.spanX, desiredSpan) { cand ->
@@ -490,18 +493,17 @@ fun WidgetResizeFrameOverlay(
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
                                         }
-                                        val rawResidual = signedDx - (latest.spanX - start.spanX) * stepPx
-                                        val blocked = acceptedSpan != desiredSpan
-                                        residualPx = if (blocked) {
-                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                        } else {
-                                            rawResidual.coerceIn(-limit, limit)
-                                        }
+                                        val minDelta = -(maxReachableSpan - start.spanX) * stepPx
+                                        val maxDelta = (start.spanX - effMinX) * stepPx
+                                        dragDeltaPx = totalDelta.x.coerceIn(minDelta, maxDelta)
                                     }
 
                                     ResizeEdge.BOTTOM -> {
                                         val signedDy = totalDelta.y
                                         val maxAllowedSpan = minOf(effMaxY, rows - start.cellY)
+                                        val maxReachableSpan = stepTowardValue(start.spanY, maxAllowedSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, start.cellY, start.spanX, cand)
+                                        }
                                         val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
                                             .coerceIn(effMinY, maxAllowedSpan)
                                         val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
@@ -512,18 +514,17 @@ fun WidgetResizeFrameOverlay(
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
                                         }
-                                        val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
-                                        val blocked = acceptedSpan != desiredSpan
-                                        residualPx = if (blocked) {
-                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                        } else {
-                                            rawResidual.coerceIn(-limit, limit)
-                                        }
+                                        val minDelta = -(start.spanY - effMinY) * stepPx
+                                        val maxDelta = (maxReachableSpan - start.spanY) * stepPx
+                                        dragDeltaPx = signedDy.coerceIn(minDelta, maxDelta)
                                     }
 
                                     ResizeEdge.TOP -> {
                                         val signedDy = -totalDelta.y
                                         val maxAllowedSpan = minOf(effMaxY, anchorBottom)
+                                        val maxReachableSpan = stepTowardValue(start.spanY, maxAllowedSpan) { cand ->
+                                            currentCanPlaceRect(start.cellX, anchorBottom - cand, start.spanX, cand)
+                                        }
                                         val desiredSpan = (start.spanY + (signedDy / stepPx).roundToInt())
                                             .coerceIn(effMinY, maxAllowedSpan)
                                         val acceptedSpan = stepTowardValue(latest.spanY, desiredSpan) { cand ->
@@ -534,18 +535,15 @@ fun WidgetResizeFrameOverlay(
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             currentOnUpdateRect(latest.cellX, latest.cellY, latest.spanX, latest.spanY)
                                         }
-                                        val rawResidual = signedDy - (latest.spanY - start.spanY) * stepPx
-                                        val blocked = acceptedSpan != desiredSpan
-                                        residualPx = if (blocked) {
-                                            rawResidual.coerceIn(-limit * 0.35f, limit * 0.35f)
-                                        } else {
-                                            rawResidual.coerceIn(-limit, limit)
-                                        }
+                                        val minDelta = -(maxReachableSpan - start.spanY) * stepPx
+                                        val maxDelta = (start.spanY - effMinY) * stepPx
+                                        dragDeltaPx = totalDelta.y.coerceIn(minDelta, maxDelta)
                                     }
                                 }
                             }
                             activeEdge = null
-                            residualPx = 0f
+                            dragStartRect = null
+                            dragDeltaPx = 0f
                         } else if (insideWidget) {
                             // Widget body: tap exits edit mode; long-press starts free-floating drag
                             down.consume()
@@ -634,13 +632,30 @@ fun WidgetResizeFrameOverlay(
         )
 
         // Dynamic rounded frame outline matching AOSP Launcher3 AppWidgetResizeFrame
+        val startRef = dragStartRect
+        val leftDelta = if (activeEdge == ResizeEdge.LEFT && startRef != null) {
+            dragDeltaPx - (currentRect.cellX - startRef.cellX) * safeColStep
+        } else {
+            0f
+        }
+        val rightDelta = if (activeEdge == ResizeEdge.RIGHT && startRef != null) {
+            dragDeltaPx - ((currentRect.cellX + currentRect.spanX) - (startRef.cellX + startRef.spanX)) * safeColStep
+        } else {
+            0f
+        }
+        val topDelta = if (activeEdge == ResizeEdge.TOP && startRef != null) {
+            dragDeltaPx - (currentRect.cellY - startRef.cellY) * safeRowStep
+        } else {
+            0f
+        }
+        val bottomDelta = if (activeEdge == ResizeEdge.BOTTOM && startRef != null) {
+            dragDeltaPx - ((currentRect.cellY + currentRect.spanY) - (startRef.cellY + startRef.spanY)) * safeRowStep
+        } else {
+            0f
+        }
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             val inset = RESIZE_HANDLE_MARGIN_DP.dp.toPx()
-            val leftDelta = if (activeEdge == ResizeEdge.LEFT) -residualPx else 0f
-            val rightDelta = if (activeEdge == ResizeEdge.RIGHT) residualPx else 0f
-            val topDelta = if (activeEdge == ResizeEdge.TOP) -residualPx else 0f
-            val bottomDelta = if (activeEdge == ResizeEdge.BOTTOM) residualPx else 0f
-
             val rectLeft = inset + leftDelta
             val rectTop = inset + topDelta
             val baseW = (size.width - inset * 2f).coerceAtLeast(24.dp.toPx())
@@ -668,7 +683,7 @@ fun WidgetResizeFrameOverlay(
             ResizeHandleDot(
                 edge = ResizeEdge.LEFT,
                 alignment = Alignment.CenterStart,
-                activeResidualPx = if (activeEdge == ResizeEdge.LEFT) -residualPx else 0f,
+                activeResidualPx = leftDelta,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
@@ -676,7 +691,7 @@ fun WidgetResizeFrameOverlay(
             ResizeHandleDot(
                 edge = ResizeEdge.RIGHT,
                 alignment = Alignment.CenterEnd,
-                activeResidualPx = if (activeEdge == ResizeEdge.RIGHT) residualPx else 0f,
+                activeResidualPx = rightDelta,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
@@ -687,7 +702,7 @@ fun WidgetResizeFrameOverlay(
             ResizeHandleDot(
                 edge = ResizeEdge.TOP,
                 alignment = Alignment.TopCenter,
-                activeResidualPx = if (activeEdge == ResizeEdge.TOP) -residualPx else 0f,
+                activeResidualPx = topDelta,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
@@ -695,7 +710,7 @@ fun WidgetResizeFrameOverlay(
             ResizeHandleDot(
                 edge = ResizeEdge.BOTTOM,
                 alignment = Alignment.BottomCenter,
-                activeResidualPx = if (activeEdge == ResizeEdge.BOTTOM) residualPx else 0f,
+                activeResidualPx = bottomDelta,
                 primaryColor = primaryColor,
                 ringColor = onPrimaryColor,
                 contentDesc = resizeDesc,
