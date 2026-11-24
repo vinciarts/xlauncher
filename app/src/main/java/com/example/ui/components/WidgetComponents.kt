@@ -234,9 +234,6 @@ fun WidgetContextMenuDropdown(
     val canReconfigure = remember(widget.appWidgetId) {
         widgetHostController.isReconfigurable(widget.appWidgetId)
     }
-    val canResize = remember(widget.appWidgetId, cols) {
-        widgetHostController.getResizeSpec(widget.appWidgetId, cols).isResizable
-    }
     val widgetActionsGroup = buildList {
         if (canReconfigure) {
             add(
@@ -248,26 +245,24 @@ fun WidgetContextMenuDropdown(
                 )
             )
         }
-        if (canResize) {
-            add(
-                ExpressiveMenuItemSpec(
-                    text = { Text(text = stringResource(R.string.widget_menu_resize)) },
-                    leadingIcon = { Icon(imageVector = Icons.Rounded.AspectRatio, contentDescription = null) },
-                    testTag = "widget_menu_resize",
-                    onClick = { host.onResize(widget) },
-                )
+        add(
+            ExpressiveMenuItemSpec(
+                text = { Text(text = stringResource(R.string.home_menu_edit_layout)) },
+                leadingIcon = { Icon(imageVector = Icons.Rounded.Edit, contentDescription = null) },
+                testTag = "widget_menu_edit_layout",
+                onClick = { host.onResize(widget) },
             )
-        }
+        )
     }
 
     DropdownMenuPopup(
-        expanded = expanded && widgetActionsGroup.isNotEmpty(),
+        expanded = expanded,
         onDismissRequest = host.onDismiss,
         modifier = Modifier.testTag("widget_context_menu_popup"),
     ) {
         ExpressiveMenuGroupsContent(
             groups = listOf(widgetActionsGroup),
-            parentExpanded = expanded && widgetActionsGroup.isNotEmpty(),
+            parentExpanded = expanded,
         )
     }
 }
