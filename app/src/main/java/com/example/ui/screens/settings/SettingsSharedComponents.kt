@@ -8,15 +8,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
@@ -29,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.SwipeDirection
+import kotlin.math.roundToInt
 
 internal sealed interface HomeActionTrigger {
     data class Swipe(val direction: SwipeDirection) : HomeActionTrigger
@@ -46,6 +43,7 @@ internal fun SegmentedControlContainer(
     count: Int,
     containerColor: Color,
     title: String,
+    valueLabel: String? = null,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -54,12 +52,25 @@ internal fun SegmentedControlContainer(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (valueLabel != null) {
+                    Text(
+                        text = valueLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             content()
         }
     }
@@ -114,47 +125,28 @@ internal fun <T> ConnectedToggleGroup(
 }
 
 /**
- * Compact +/- stepper for numeric grid dimensions (columns 1..8, rows 1..12).
+ * Native Material 3 discrete [Slider] for integer grid dimensions (e.g. columns 1..8, rows 1..12).
  */
 @Composable
-internal fun GridCountStepper(
+internal fun DiscreteIntSlider(
     value: Int,
     minValue: Int,
     maxValue: Int,
-    label: String,
-    testTagPrefix: String,
+    testTag: String,
     onValueChange: (Int) -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        FilledTonalIconButton(
-            onClick = { onValueChange((value - 1).coerceIn(minValue, maxValue)) },
-            enabled = value > minValue,
-            modifier = Modifier.testTag("${testTagPrefix}_dec"),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Remove,
-                contentDescription = null,
-            )
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.testTag("${testTagPrefix}_value"),
-        )
-        FilledTonalIconButton(
-            onClick = { onValueChange((value + 1).coerceIn(minValue, maxValue)) },
-            enabled = value < maxValue,
-            modifier = Modifier.testTag("${testTagPrefix}_inc"),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-            )
-        }
-    }
+    Slider(
+        value = value.coerceIn(minValue, maxValue).toFloat(),
+        onValueChange = { raw ->
+            val snapped = raw.roundToInt().coerceIn(minValue, maxValue)
+            if (snapped != value) {
+                onValueChange(snapped)
+            }
+        },
+        valueRange = minValue.toFloat()..maxValue.toFloat(),
+        steps = (maxValue - minValue - 1).coerceAtLeast(0),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+    )
 }

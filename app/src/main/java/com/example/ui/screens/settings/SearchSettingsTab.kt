@@ -194,6 +194,7 @@ internal fun LazyListScope.searchSettingsItems(
     // Auto Third-Party App Search & Web Search Section
     item(key = "web_and_third_party_search_section") {
         val providerCount = uiState.availableSearchProviders.size
+        val itemCount = if (settings.searchWebEnabled) 3 else 2
         Column(modifier = Modifier.fillMaxWidth()) {
             ExpressiveSectionHeader(title = stringResource(R.string.settings_search_external_section))
             Column(
@@ -202,7 +203,7 @@ internal fun LazyListScope.searchSettingsItems(
             ) {
                 SegmentedListItem(
                     onClick = { onSetSearchWebEnabled(!settings.searchWebEnabled) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 0, count = 2),
+                    shapes = ListItemDefaults.segmentedShapes(index = 0, count = itemCount),
                     colors = segmentedColors,
                     leadingContent = {
                         Icon(
@@ -231,9 +232,30 @@ internal fun LazyListScope.searchSettingsItems(
                     },
                 )
 
+                if (settings.searchWebEnabled) {
+                    SegmentedControlContainer(
+                        index = 1,
+                        count = itemCount,
+                        containerColor = segmentedColors.containerColor,
+                        title = stringResource(R.string.settings_search_web_engine_label),
+                    ) {
+                        ConnectedToggleGroup(
+                            options = WebSearchEngine.entries,
+                            selectedOption = settings.searchWebEngine,
+                            labelFor = { it.label },
+                            testTagFor = { "chip_web_engine_${it.id}" },
+                            onSelect = onSetSearchWebEngine,
+                            compactPadding = true,
+                        )
+                    }
+                }
+
                 SegmentedListItem(
                     onClick = { onSetSearchThirdPartyAppsEnabled(!settings.searchThirdPartyAppsEnabled) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 1, count = 2),
+                    shapes = ListItemDefaults.segmentedShapes(
+                        index = if (settings.searchWebEnabled) 2 else 1,
+                        count = itemCount,
+                    ),
                     colors = segmentedColors,
                     leadingContent = {
                         Icon(
@@ -262,31 +284,6 @@ internal fun LazyListScope.searchSettingsItems(
                         Text(text = stringResource(R.string.settings_search_third_party_section))
                     },
                 )
-            }
-
-            if (settings.searchWebEnabled) {
-                Text(
-                    text = stringResource(R.string.settings_search_web_engine_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                ) {
-                    WebSearchEngine.entries.forEach { engine ->
-                        FilterChip(
-                            selected = settings.searchWebEngine == engine,
-                            onClick = { onSetSearchWebEngine(engine) },
-                            label = { Text(text = engine.label) },
-                            modifier = Modifier.testTag("chip_web_engine_${engine.id}"),
-                        )
-                    }
-                }
             }
         }
     }

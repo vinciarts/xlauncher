@@ -118,6 +118,7 @@ internal fun HomePageContent(
     draggedWidgetId: Int?,
     cols: Int,
     rows: Int,
+    showAppLabels: Boolean = true,
     appGestures: ImmutableMap<String, ImmutableMap<SwipeDirection, String>>,
     widgetHostController: WidgetHostController,
     appMenuHost: AppContextMenuHost,
@@ -247,7 +248,7 @@ internal fun HomePageContent(
                                 AppIconTile(
                                     app = slot.app,
                                     boundDirections = boundDirs,
-                                    showLabel = true,
+                                    showLabel = showAppLabels,
                                     onWallpaper = true,
                                     iconSize = iconSize,
                                     onDownPointer = onIconDownPointer,

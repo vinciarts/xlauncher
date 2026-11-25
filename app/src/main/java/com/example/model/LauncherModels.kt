@@ -365,6 +365,7 @@ data class LauncherSettings(
     val homeButtonAction: HomeGestureAction = HomeGestureAction.GoFirstPage,
     val drawerColumns: Int = 4,
     val iconShape: IconShape = IconShape.SYSTEM,
+    val homeShowAppLabels: Boolean = true,
     // Custom tabs shown after the built-in "All" tab in the App Drawer
     val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,

@@ -107,7 +107,12 @@ fun DrawerUniversalSearchResults(
     }
 
     val context = LocalContext.current
-    val iconSize = if (cols == 5) 48.dp else 52.dp
+    val iconSize = when {
+        cols >= 7 -> 36.dp
+        cols == 6 -> 42.dp
+        cols == 5 -> 48.dp
+        else -> 52.dp
+    }
     val segmentedColors = ListItemDefaults.segmentedColors()
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     androidx.compose.runtime.LaunchedEffect(gridState) {

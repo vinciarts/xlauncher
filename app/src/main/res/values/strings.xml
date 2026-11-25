@@ -69,6 +69,7 @@
     <string name="home_gesture_group_system">System</string>
     <string name="home_gesture_group_app">Apps</string>
     <string name="settings_icon_shape_section">Icons</string>
+    <string name="settings_home_show_labels">Show app labels</string>
     <string name="settings_icon_shape">Icon shape</string>
     <string name="icon_shape_system">System</string>
     <string name="icon_shape_squircle">Squircle</string>

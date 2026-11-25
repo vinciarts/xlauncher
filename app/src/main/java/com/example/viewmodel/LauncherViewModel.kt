@@ -1436,6 +1436,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setHomeShowAppLabels(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setHomeShowAppLabels(show)
+        }
+    }
+
     fun openContact(contact: ContactSearchResult) {
         val ok = searchRepository.openContact(contact)
         if (ok) {

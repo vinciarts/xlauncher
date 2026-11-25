@@ -118,6 +118,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val SCHEMA_VERSION = PrefKeys.SCHEMA_VERSION
         val HOME_PAGE_COUNT = intPreferencesKey("home_page_count")
         val HOME_LOOP_PAGING = booleanPreferencesKey("home_loop_paging")
+        val HOME_SHOW_APP_LABELS = booleanPreferencesKey("home_show_app_labels")
         val HOME_GRID_COLUMNS = intPreferencesKey("home_grid_columns")
         val HOME_GRID_ROWS = intPreferencesKey("home_grid_rows")
         val HOME_APPS_GRID = PrefKeys.HOME_APPS_GRID
@@ -166,8 +167,10 @@ class LauncherPreferencesRepository(private val context: Context) {
             ),
             homeButtonAction = prefs[Keys.HOME_BUTTON_ACTION]?.let { HomeGestureAction.decode(it) }
                 ?: HomeGestureAction.GoFirstPage,
-            drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4).coerceIn(4, 5),
+            drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4)
+                .coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS),
             iconShape = IconShape.decode(prefs[Keys.ICON_SHAPE]),
+            homeShowAppLabels = prefs[Keys.HOME_SHOW_APP_LABELS] ?: true,
             drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toImmutableList(),
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
@@ -912,7 +915,10 @@ class LauncherPreferencesRepository(private val context: Context) {
 
     suspend fun setDrawerColumns(columns: Int) {
         context.launcherDataStore.edit { prefs ->
-            prefs[Keys.DRAWER_COLUMNS] = columns.coerceIn(4, 5)
+            prefs[Keys.DRAWER_COLUMNS] = columns.coerceIn(
+                HomeGridEngine.MIN_HOME_GRID_COLUMNS,
+                HomeGridEngine.MAX_HOME_GRID_COLUMNS,
+            )
         }
     }
 
@@ -1307,6 +1313,12 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun setHomeShowAppLabels(show: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.HOME_SHOW_APP_LABELS] = show
+        }
+    }
+
     suspend fun exportSettingsJson(): String {
         val snapshot = settingsFlow.first()
         return LauncherSettingsBackup.serialize(snapshot)
@@ -1317,6 +1329,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
             prefs[Keys.HOME_PAGE_COUNT] = restored.homePageCount
             prefs[Keys.HOME_LOOP_PAGING] = restored.homeLoopPaging
+            prefs[Keys.HOME_SHOW_APP_LABELS] = restored.homeShowAppLabels
             prefs[Keys.HOME_GRID_COLUMNS] = restored.homeGridColumns
             prefs[Keys.HOME_GRID_ROWS] = restored.homeGridRows
             prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(restored.placedHomeApps)

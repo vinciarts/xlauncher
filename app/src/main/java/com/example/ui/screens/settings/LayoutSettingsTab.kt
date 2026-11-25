@@ -3,8 +3,6 @@ package com.example.ui.screens.settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
@@ -39,13 +36,14 @@ import com.example.model.IconShape
 import com.example.model.LauncherUiState
 import com.example.ui.components.ExpressiveSectionHeader
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal fun LazyListScope.layoutSettingsItems(
     uiState: LauncherUiState,
     segmentedColors: ListItemColors,
     onSetHomeGridColumns: (Int) -> Unit,
     onSetHomeGridRows: (Int) -> Unit,
     onSetHomeLoopPaging: (Boolean) -> Unit,
+    onSetHomeShowAppLabels: (Boolean) -> Unit,
     onSetIconShape: (IconShape) -> Unit,
     onSetDrawerColumns: (Int) -> Unit,
     onSetAllTabHidden: (Boolean) -> Unit,
@@ -65,39 +63,39 @@ internal fun LazyListScope.layoutSettingsItems(
             ) {
                 SegmentedControlContainer(
                     index = 0,
-                    count = 3,
+                    count = 4,
                     containerColor = segmentedColors.containerColor,
                     title = stringResource(R.string.settings_home_columns),
+                    valueLabel = stringResource(R.string.grid_columns_option, settings.homeGridColumns),
                 ) {
-                    GridCountStepper(
+                    DiscreteIntSlider(
                         value = settings.homeGridColumns,
                         minValue = HomeGridEngine.MIN_HOME_GRID_COLUMNS,
                         maxValue = HomeGridEngine.MAX_HOME_GRID_COLUMNS,
-                        label = stringResource(R.string.grid_columns_option, settings.homeGridColumns),
-                        testTagPrefix = "home_cols",
+                        testTag = "slider_home_cols",
                         onValueChange = onSetHomeGridColumns,
                     )
                 }
 
                 SegmentedControlContainer(
                     index = 1,
-                    count = 3,
+                    count = 4,
                     containerColor = segmentedColors.containerColor,
                     title = stringResource(R.string.settings_home_rows),
+                    valueLabel = stringResource(R.string.grid_rows_option, settings.homeGridRows),
                 ) {
-                    GridCountStepper(
+                    DiscreteIntSlider(
                         value = settings.homeGridRows,
                         minValue = HomeGridEngine.MIN_HOME_GRID_ROWS,
                         maxValue = HomeGridEngine.MAX_HOME_GRID_ROWS,
-                        label = stringResource(R.string.grid_rows_option, settings.homeGridRows),
-                        testTagPrefix = "home_rows",
+                        testTag = "slider_home_rows",
                         onValueChange = onSetHomeGridRows,
                     )
                 }
 
                 SegmentedListItem(
                     onClick = { onSetHomeLoopPaging(!settings.homeLoopPaging) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 2, count = 3),
+                    shapes = ListItemDefaults.segmentedShapes(index = 2, count = 4),
                     colors = segmentedColors,
                     trailingContent = {
                         Switch(
@@ -108,6 +106,22 @@ internal fun LazyListScope.layoutSettingsItems(
                     },
                     content = {
                         Text(text = stringResource(R.string.settings_home_loop))
+                    },
+                )
+
+                SegmentedListItem(
+                    onClick = { onSetHomeShowAppLabels(!settings.homeShowAppLabels) },
+                    shapes = ListItemDefaults.segmentedShapes(index = 3, count = 4),
+                    colors = segmentedColors,
+                    trailingContent = {
+                        Switch(
+                            checked = settings.homeShowAppLabels,
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("switch_home_show_labels"),
+                        )
+                    },
+                    content = {
+                        Text(text = stringResource(R.string.settings_home_show_labels))
                     },
                 )
             }
@@ -150,26 +164,22 @@ internal fun LazyListScope.layoutSettingsItems(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                 }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    IconShape.entries.forEach { shape ->
+                ConnectedToggleGroup(
+                    options = IconShape.entries,
+                    selectedOption = settings.iconShape,
+                    labelFor = { shape ->
                         val labelRes = when (shape) {
                             IconShape.SYSTEM -> R.string.icon_shape_system
                             IconShape.SQUIRCLE -> R.string.icon_shape_squircle
                             IconShape.ROUNDED_SQUARE -> R.string.icon_shape_rounded_square
                             IconShape.CIRCLE -> R.string.icon_shape_circle
                         }
-                        FilterChip(
-                            selected = settings.iconShape == shape,
-                            onClick = { onSetIconShape(shape) },
-                            label = { Text(text = stringResource(labelRes)) },
-                            modifier = Modifier.testTag("chip_icon_shape_${shape.id}"),
-                        )
-                    }
-                }
+                        stringResource(labelRes)
+                    },
+                    testTagFor = { "chip_icon_shape_${it.id}" },
+                    onSelect = onSetIconShape,
+                    compactPadding = true,
+                )
             }
         }
     }
@@ -183,13 +193,14 @@ internal fun LazyListScope.layoutSettingsItems(
                 count = 1,
                 containerColor = segmentedColors.containerColor,
                 title = stringResource(R.string.settings_drawer_columns),
+                valueLabel = stringResource(R.string.grid_columns_option, settings.drawerColumns),
             ) {
-                ConnectedToggleGroup(
-                    options = listOf(4, 5),
-                    selectedOption = settings.drawerColumns,
-                    labelFor = { stringResource(R.string.grid_columns_option, it) },
-                    testTagFor = { "drawer_cols_$it" },
-                    onSelect = onSetDrawerColumns,
+                DiscreteIntSlider(
+                    value = settings.drawerColumns,
+                    minValue = HomeGridEngine.MIN_HOME_GRID_COLUMNS,
+                    maxValue = HomeGridEngine.MAX_HOME_GRID_COLUMNS,
+                    testTag = "slider_drawer_cols",
+                    onValueChange = onSetDrawerColumns,
                 )
             }
         }

@@ -22,6 +22,7 @@ import java.util.UUID
 data class RestoredLauncherSettings(
     val homePageCount: Int,
     val homeLoopPaging: Boolean,
+    val homeShowAppLabels: Boolean,
     val homeGridColumns: Int,
     val homeGridRows: Int,
     val placedHomeApps: List<PlacedHomeApp>,
@@ -103,6 +104,7 @@ object LauncherSettingsBackup {
         // App Drawer
         root.put("drawerColumns", settings.drawerColumns)
         root.put("iconShape", settings.iconShape.id)
+        root.put("homeShowAppLabels", settings.homeShowAppLabels)
         root.put("isAllTabHidden", settings.isAllTabHidden)
 
         val tabsArr = JSONArray()
@@ -224,7 +226,8 @@ object LauncherSettingsBackup {
             HomeGestureAction.GoFirstPage
         }
 
-        val drawerColumns = root.optInt("drawerColumns", 4).coerceIn(4, 5)
+        val drawerColumns = root.optInt("drawerColumns", 4)
+            .coerceIn(HomeGridEngine.MIN_HOME_GRID_COLUMNS, HomeGridEngine.MAX_HOME_GRID_COLUMNS)
         val rawAllHidden = root.optBoolean("isAllTabHidden", false)
 
         val drawerTabs = mutableListOf<DrawerTab>()
@@ -277,10 +280,12 @@ object LauncherSettingsBackup {
         val searchWebEnabled = root.optBoolean("searchWebEnabled", true)
         val searchWebEngine = WebSearchEngine.decode(root.optString("searchWebEngine", ""))
         val iconShape = IconShape.decode(root.optString("iconShape", ""))
+        val homeShowAppLabels = root.optBoolean("homeShowAppLabels", true)
 
         RestoredLauncherSettings(
             homePageCount = homePageCount,
             homeLoopPaging = homeLoopPaging,
+            homeShowAppLabels = homeShowAppLabels,
             homeGridColumns = homeGridColumns,
             homeGridRows = homeGridRows,
             placedHomeApps = placedHomeApps,

@@ -591,7 +591,12 @@ private fun DrawerAppsVerticalGrid(
     onAtTopChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val iconSize = if (cols == 5) 48.dp else 52.dp
+    val iconSize = when {
+        cols >= 7 -> 36.dp
+        cols == 6 -> 42.dp
+        cols == 5 -> 48.dp
+        else -> 52.dp
+    }
     val gridState = rememberLazyGridState()
     LaunchedEffect(gridState) {
         snapshotFlow { !gridState.canScrollBackward }
