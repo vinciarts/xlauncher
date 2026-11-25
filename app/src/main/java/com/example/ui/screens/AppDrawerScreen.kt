@@ -151,6 +151,7 @@ fun AppDrawerScreen(
     drawerSearchQuery: String,
     autoFocusDrawerSearch: Boolean,
     drawerColumns: Int,
+    drawerBottomAligned: Boolean = false,
     selectedTabId: String = DrawerTab.ALL_TAB_ID,
     onSelectedTabChange: (String) -> Unit = {},
     onClose: () -> Unit,
@@ -735,6 +736,7 @@ fun AppDrawerScreen(
                                 apps = tabPage.apps,
                                 foldedAppKeys = foldedAppKeys,
                                 cols = drawerColumns,
+                                bottomAligned = drawerBottomAligned,
                                 tabIndex = realPage,
                                 isActive = isActive,
                                 isCurrentPage = virtualPage == pagerState.currentPage,
@@ -1060,6 +1062,7 @@ private fun DrawerAppsVerticalGrid(
     apps: ImmutableList<AppItem>,
     foldedAppKeys: ImmutableSet<String>,
     cols: Int,
+    bottomAligned: Boolean,
     tabIndex: Int,
     isActive: Boolean,
     isCurrentPage: Boolean,
@@ -1098,7 +1101,10 @@ private fun DrawerAppsVerticalGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(
+            space = 10.dp,
+            alignment = if (bottomAligned) Alignment.Bottom else Alignment.Top,
+        ),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier.verticalFadingEdge(gridState),
     ) {
@@ -1136,8 +1142,78 @@ private fun DrawerAppsVerticalGrid(
                     )
                 }
             }
-        } else {
-            // Normal Mode: Section 1 (Expanded / primary apps)
+        } else if (bottomAligned) {
+            // Bottom-aligned Normal Mode: Folded zone ABOVE, separator bar in middle, Primary zone anchored at bottom.
+            if (foldedApps.isNotEmpty()) {
+                if (isFoldedExpanded) {
+                    items(
+                        items = foldedApps,
+                        key = { "folded_${it.componentKey}" },
+                        contentType = { "drawer_folded_app" },
+                    ) { app ->
+                        Box(modifier = Modifier.alpha(0.78f)) {
+                            AppIconTile(
+                                app = app,
+                                boundDirections = persistentSetOf(),
+                                showLabel = true,
+                                onWallpaper = false,
+                                iconSize = iconSize,
+                                onClick = { onAppClick(app) },
+                                onLongClick = { appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex) },
+                                onSwipe = {},
+                            )
+                            AppContextMenuDropdown(
+                                app = app,
+                                origin = AppActionOrigin.DRAWER,
+                                sourcePageIndex = tabIndex,
+                                expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
+                                host = appMenuHost,
+                            )
+                        }
+                    }
+                }
+
+                item(
+                    key = "drawer_folded_header_$tabIndex",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "drawer_folded_header",
+                ) {
+                    Surface(
+                        onClick = { isFoldedExpanded = !isFoldedExpanded },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = if (primaryApps.isNotEmpty()) 8.dp else 0.dp)
+                            .testTag("drawer_folded_header"),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (isFoldedExpanded) {
+                                    Icons.Rounded.ExpandMore
+                                } else {
+                                    Icons.AutoMirrored.Rounded.KeyboardArrowRight
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.drawer_folded_section, foldedApps.size),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
             items(
                 items = primaryApps,
                 key = { it.componentKey },
@@ -1151,9 +1227,34 @@ private fun DrawerAppsVerticalGrid(
                         onWallpaper = false,
                         iconSize = iconSize,
                         onClick = { onAppClick(app) },
-                        onLongClick = {
-                            appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
-                        },
+                        onLongClick = { appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex) },
+                        onSwipe = {},
+                    )
+                    AppContextMenuDropdown(
+                        app = app,
+                        origin = AppActionOrigin.DRAWER,
+                        sourcePageIndex = tabIndex,
+                        expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
+                        host = appMenuHost,
+                    )
+                }
+            }
+        } else {
+            // Top-aligned Normal Mode: Primary zone ABOVE, separator bar in middle, Folded zone BELOW.
+            items(
+                items = primaryApps,
+                key = { it.componentKey },
+                contentType = { "drawer_app" },
+            ) { app ->
+                Box {
+                    AppIconTile(
+                        app = app,
+                        boundDirections = persistentSetOf(),
+                        showLabel = true,
+                        onWallpaper = false,
+                        iconSize = iconSize,
+                        onClick = { onAppClick(app) },
+                        onLongClick = { appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex) },
                         onSwipe = {},
                     )
                     AppContextMenuDropdown(
@@ -1166,7 +1267,6 @@ private fun DrawerAppsVerticalGrid(
                 }
             }
 
-            // Normal Mode: Section 2 (Independent Folded section below separator header)
             if (foldedApps.isNotEmpty()) {
                 item(
                     key = "drawer_folded_header_$tabIndex",
@@ -1214,9 +1314,7 @@ private fun DrawerAppsVerticalGrid(
                         key = { "folded_${it.componentKey}" },
                         contentType = { "drawer_folded_app" },
                     ) { app ->
-                        Box(
-                            modifier = Modifier.alpha(0.78f),
-                        ) {
+                        Box(modifier = Modifier.alpha(0.78f)) {
                             AppIconTile(
                                 app = app,
                                 boundDirections = persistentSetOf(),
@@ -1224,9 +1322,7 @@ private fun DrawerAppsVerticalGrid(
                                 onWallpaper = false,
                                 iconSize = iconSize,
                                 onClick = { onAppClick(app) },
-                                onLongClick = {
-                                    appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
-                                },
+                                onLongClick = { appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex) },
                                 onSwipe = {},
                             )
                             AppContextMenuDropdown(

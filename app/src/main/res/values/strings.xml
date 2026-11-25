@@ -74,6 +74,9 @@
     <string name="dock_count_option">%1$d icons</string>
     <string name="dock_count_off">Off</string>
     <string name="settings_drawer_auto_hide_empty_tabs">Auto-hide empty folders</string>
+    <string name="settings_drawer_alignment">Icon alignment</string>
+    <string name="drawer_align_top">Top</string>
+    <string name="drawer_align_bottom">Bottom</string>
     <string name="settings_icon_shape">Icon shape</string>
     <string name="icon_shape_system">System</string>
     <string name="icon_shape_squircle">Squircle</string>

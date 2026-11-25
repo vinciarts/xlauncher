@@ -1176,6 +1176,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setDrawerBottomAligned(bottomAligned: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setDrawerBottomAligned(bottomAligned)
+        }
+    }
+
     fun toggleDrawerAppFolded(componentKey: String) {
         emitActionHaptic()
         viewModelScope.launch {

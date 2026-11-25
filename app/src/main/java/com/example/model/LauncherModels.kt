@@ -374,6 +374,7 @@ data class LauncherSettings(
     val isAllTabHidden: Boolean = false,
     val allTabName: String = "",
     val autoHideEmptyDrawerTabs: Boolean = false,
+    val drawerBottomAligned: Boolean = false,
     val foldedDrawerAppKeys: ImmutableSet<String> = persistentSetOf(),
     val hasSeededDefaults: Boolean = false,
     // Opt-in Universal Search sources (local sources off by default; web search enabled by default)

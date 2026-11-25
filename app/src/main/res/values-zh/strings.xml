@@ -74,6 +74,9 @@
     <string name="dock_count_option">%1$d 个</string>
     <string name="dock_count_off">关闭</string>
     <string name="settings_drawer_auto_hide_empty_tabs">自动隐藏空文件夹</string>
+    <string name="settings_drawer_alignment">图标对齐方式</string>
+    <string name="drawer_align_top">顶对齐</string>
+    <string name="drawer_align_bottom">底对齐</string>
     <string name="settings_icon_shape">图标形状</string>
     <string name="icon_shape_system">跟随系统</string>
     <string name="icon_shape_squircle">超椭圆</string>

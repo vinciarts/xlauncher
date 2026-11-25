@@ -48,6 +48,7 @@ internal fun LazyListScope.layoutSettingsItems(
     onSetHomeShowAppLabels: (Boolean) -> Unit,
     onSetIconShape: (IconShape) -> Unit,
     onSetDrawerColumns: (Int) -> Unit,
+    onSetDrawerBottomAligned: (Boolean) -> Unit,
     onSetAutoHideEmptyDrawerTabs: (Boolean) -> Unit,
     onSetAllTabHidden: (Boolean) -> Unit,
     onSetDrawerTabHidden: (String, Boolean) -> Unit,
@@ -217,7 +218,7 @@ internal fun LazyListScope.layoutSettingsItems(
             ) {
                 SegmentedControlContainer(
                     index = 0,
-                    count = 2,
+                    count = 3,
                     containerColor = segmentedColors.containerColor,
                     title = stringResource(R.string.settings_drawer_columns),
                     valueLabel = stringResource(R.string.grid_columns_option, settings.drawerColumns),
@@ -231,9 +232,28 @@ internal fun LazyListScope.layoutSettingsItems(
                     )
                 }
 
+                SegmentedControlContainer(
+                    index = 1,
+                    count = 3,
+                    containerColor = segmentedColors.containerColor,
+                    title = stringResource(R.string.settings_drawer_alignment),
+                ) {
+                    ConnectedToggleGroup(
+                        options = listOf(false, true),
+                        selectedOption = settings.drawerBottomAligned,
+                        labelFor = { bottom ->
+                            stringResource(
+                                if (bottom) R.string.drawer_align_bottom else R.string.drawer_align_top
+                            )
+                        },
+                        testTagFor = { bottom -> if (bottom) "drawer_align_bottom" else "drawer_align_top" },
+                        onSelect = onSetDrawerBottomAligned,
+                    )
+                }
+
                 SegmentedListItem(
                     onClick = { onSetAutoHideEmptyDrawerTabs(!settings.autoHideEmptyDrawerTabs) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 1, count = 2),
+                    shapes = ListItemDefaults.segmentedShapes(index = 2, count = 3),
                     colors = segmentedColors,
                     trailingContent = {
                         Switch(

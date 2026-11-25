@@ -138,6 +138,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val ALL_TAB_HIDDEN = booleanPreferencesKey("drawer_all_tab_hidden")
         val ALL_TAB_NAME = stringPreferencesKey("drawer_all_tab_name")
         val AUTO_HIDE_EMPTY_DRAWER_TABS = booleanPreferencesKey("drawer_auto_hide_empty_tabs")
+        val DRAWER_BOTTOM_ALIGNED = booleanPreferencesKey("drawer_bottom_aligned")
         val FOLDED_DRAWER_APP_KEYS = stringPreferencesKey("drawer_folded_app_keys")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
         val SEARCH_SHORTCUTS_ENABLED = booleanPreferencesKey("search_shortcuts_enabled")
@@ -181,6 +182,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             allTabName = prefs[Keys.ALL_TAB_NAME]?.trim() ?: "",
             autoHideEmptyDrawerTabs = prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] ?: false,
+            drawerBottomAligned = prefs[Keys.DRAWER_BOTTOM_ALIGNED] ?: false,
             foldedDrawerAppKeys = decodeEncodedList(prefs[Keys.FOLDED_DRAWER_APP_KEYS]).toImmutableSet(),
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
             searchShortcutsEnabled = prefs[Keys.SEARCH_SHORTCUTS_ENABLED] ?: false,
@@ -1060,6 +1062,12 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun setDrawerBottomAligned(bottomAligned: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.DRAWER_BOTTOM_ALIGNED] = bottomAligned
+        }
+    }
+
     suspend fun toggleDrawerAppFolded(componentKey: String) {
         if (componentKey.isBlank()) return
         context.launcherDataStore.edit { prefs ->
@@ -1422,6 +1430,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.ALL_TAB_HIDDEN] = restored.isAllTabHidden
             prefs[Keys.ALL_TAB_NAME] = restored.allTabName
             prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] = restored.autoHideEmptyDrawerTabs
+            prefs[Keys.DRAWER_BOTTOM_ALIGNED] = restored.drawerBottomAligned
             prefs[Keys.FOLDED_DRAWER_APP_KEYS] = encodeEncodedList(restored.foldedDrawerAppKeys)
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true
 

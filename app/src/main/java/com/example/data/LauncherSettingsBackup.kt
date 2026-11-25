@@ -37,6 +37,7 @@ data class RestoredLauncherSettings(
     val isAllTabHidden: Boolean,
     val allTabName: String,
     val autoHideEmptyDrawerTabs: Boolean,
+    val drawerBottomAligned: Boolean,
     val foldedDrawerAppKeys: List<String>,
     val searchShortcutsEnabled: Boolean,
     val searchContactsEnabled: Boolean,
@@ -113,6 +114,7 @@ object LauncherSettingsBackup {
         root.put("isAllTabHidden", settings.isAllTabHidden)
         root.put("allTabName", settings.allTabName)
         root.put("autoHideEmptyDrawerTabs", settings.autoHideEmptyDrawerTabs)
+        root.put("drawerBottomAligned", settings.drawerBottomAligned)
         val foldedArr = JSONArray()
         settings.foldedDrawerAppKeys.forEach { foldedArr.put(it) }
         root.put("foldedDrawerAppKeys", foldedArr)
@@ -279,6 +281,7 @@ object LauncherSettingsBackup {
         val isAllTabHidden = rawAllHidden && hasVisibleCustomTab
         val allTabName = root.optString("allTabName", "").trim()
         val autoHideEmptyDrawerTabs = root.optBoolean("autoHideEmptyDrawerTabs", false)
+        val drawerBottomAligned = root.optBoolean("drawerBottomAligned", false)
         val foldedDrawerAppKeys = mutableListOf<String>()
         val foldedArr = root.optJSONArray("foldedDrawerAppKeys")
         if (foldedArr != null) {
@@ -324,6 +327,7 @@ object LauncherSettingsBackup {
             isAllTabHidden = isAllTabHidden,
             allTabName = allTabName,
             autoHideEmptyDrawerTabs = autoHideEmptyDrawerTabs,
+            drawerBottomAligned = drawerBottomAligned,
             foldedDrawerAppKeys = foldedDrawerAppKeys,
             searchShortcutsEnabled = searchShortcutsEnabled,
             searchContactsEnabled = searchContactsEnabled,
