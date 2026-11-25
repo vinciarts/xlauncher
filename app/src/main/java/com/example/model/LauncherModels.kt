@@ -48,6 +48,19 @@ enum class WebSearchEngine(
     }
 }
 
+enum class IconShape(val id: String) {
+    SYSTEM("system"),
+    SQUIRCLE("squircle"),
+    ROUNDED_SQUARE("rounded_square"),
+    CIRCLE("circle"),
+    ;
+
+    companion object {
+        fun decode(raw: String?): IconShape =
+            entries.firstOrNull { it.id.equals(raw?.trim(), ignoreCase = true) } ?: SYSTEM
+    }
+}
+
 enum class HomePageCommandType {
     FIRST_PAGE,
     PREV_PAGE,
@@ -351,6 +364,7 @@ data class LauncherSettings(
     // Action triggered when pressing Home while already on a clean desktop
     val homeButtonAction: HomeGestureAction = HomeGestureAction.GoFirstPage,
     val drawerColumns: Int = 4,
+    val iconShape: IconShape = IconShape.SYSTEM,
     // Custom tabs shown after the built-in "All" tab in the App Drawer
     val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,

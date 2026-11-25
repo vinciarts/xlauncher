@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.DrawerTab
 import com.example.model.HomeGestureAction
 import com.example.model.HomeGridEngine
+import com.example.model.IconShape
 import com.example.model.LauncherSettings
 import com.example.model.PlacedHomeApp
 import com.example.model.PlacedWidget
@@ -129,6 +130,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val HOME_GESTURE_RIGHT = stringPreferencesKey("home_gesture_right")
         val HOME_BUTTON_ACTION = stringPreferencesKey("home_button_action")
         val DRAWER_COLUMNS = intPreferencesKey("drawer_columns")
+        val ICON_SHAPE = stringPreferencesKey("icon_shape")
         val DRAWER_TABS = stringPreferencesKey("drawer_tabs")
         val ALL_TAB_HIDDEN = booleanPreferencesKey("drawer_all_tab_hidden")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
@@ -165,6 +167,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             homeButtonAction = prefs[Keys.HOME_BUTTON_ACTION]?.let { HomeGestureAction.decode(it) }
                 ?: HomeGestureAction.GoFirstPage,
             drawerColumns = (prefs[Keys.DRAWER_COLUMNS] ?: 4).coerceIn(4, 5),
+            iconShape = IconShape.decode(prefs[Keys.ICON_SHAPE]),
             drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toImmutableList(),
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
@@ -1298,6 +1301,12 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun setIconShape(shape: IconShape) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.ICON_SHAPE] = shape.id
+        }
+    }
+
     suspend fun exportSettingsJson(): String {
         val snapshot = settingsFlow.first()
         return LauncherSettingsBackup.serialize(snapshot)
@@ -1322,6 +1331,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.HOME_BUTTON_ACTION] = restored.homeButtonAction.encode()
 
             prefs[Keys.DRAWER_COLUMNS] = restored.drawerColumns
+            prefs[Keys.ICON_SHAPE] = restored.iconShape.id
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(restored.drawerTabs)
             prefs[Keys.ALL_TAB_HIDDEN] = restored.isAllTabHidden
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true

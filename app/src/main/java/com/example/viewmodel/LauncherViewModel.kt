@@ -24,6 +24,7 @@ import com.example.model.HomeGestureAction
 import com.example.model.HomeGridEngine
 import com.example.model.HomePageCommand
 import com.example.model.HomePageCommandType
+import com.example.model.IconShape
 import com.example.model.IndexedFolderInfo
 import com.example.model.LauncherDestination
 import com.example.model.LauncherSettings
@@ -438,6 +439,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
         }
+
+        viewModelScope.launch {
+            prefsRepository.settingsFlow
+                .map { it.iconShape }
+                .distinctUntilChanged()
+                .collect { shape ->
+                    if (!isLoadingApps.value) {
+                        installedApps.value = appRepository.loadInstalledApps(shape)
+                    }
+                }
+        }
     }
 
     private fun reloadContactsCache() {
@@ -457,7 +469,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             if (changedPackage != null) {
                 appRepository.clearIconCacheForPackage(changedPackage)
             }
-            val apps = appRepository.loadInstalledApps()
+            val currentSettings = prefsRepository.settingsFlow.first()
+            val apps = appRepository.loadInstalledApps(currentSettings.iconShape)
             installedApps.value = apps
             isLoadingApps.value = false
 
@@ -1414,6 +1427,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setSearchWebEngine(engine: WebSearchEngine) {
         viewModelScope.launch {
             prefsRepository.setSearchWebEngine(engine)
+        }
+    }
+
+    fun setIconShape(shape: IconShape) {
+        viewModelScope.launch {
+            prefsRepository.setIconShape(shape)
         }
     }
 

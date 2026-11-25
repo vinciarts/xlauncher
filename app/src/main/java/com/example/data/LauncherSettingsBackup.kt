@@ -3,6 +3,7 @@ package com.example.data
 import com.example.model.DrawerTab
 import com.example.model.HomeGestureAction
 import com.example.model.HomeGridEngine
+import com.example.model.IconShape
 import com.example.model.LauncherSettings
 import com.example.model.PlacedHomeApp
 import com.example.model.SwipeDirection
@@ -29,6 +30,7 @@ data class RestoredLauncherSettings(
     val homeGestures: Map<SwipeDirection, HomeGestureAction>,
     val homeButtonAction: HomeGestureAction,
     val drawerColumns: Int,
+    val iconShape: IconShape,
     val drawerTabs: List<DrawerTab>,
     val isAllTabHidden: Boolean,
     val searchShortcutsEnabled: Boolean,
@@ -100,6 +102,7 @@ object LauncherSettingsBackup {
 
         // App Drawer
         root.put("drawerColumns", settings.drawerColumns)
+        root.put("iconShape", settings.iconShape.id)
         root.put("isAllTabHidden", settings.isAllTabHidden)
 
         val tabsArr = JSONArray()
@@ -273,6 +276,7 @@ object LauncherSettingsBackup {
         }
         val searchWebEnabled = root.optBoolean("searchWebEnabled", true)
         val searchWebEngine = WebSearchEngine.decode(root.optString("searchWebEngine", ""))
+        val iconShape = IconShape.decode(root.optString("iconShape", ""))
 
         RestoredLauncherSettings(
             homePageCount = homePageCount,
@@ -285,6 +289,7 @@ object LauncherSettingsBackup {
             homeGestures = homeGestures,
             homeButtonAction = homeButtonAction,
             drawerColumns = drawerColumns,
+            iconShape = iconShape,
             drawerTabs = drawerTabs,
             isAllTabHidden = isAllTabHidden,
             searchShortcutsEnabled = searchShortcutsEnabled,

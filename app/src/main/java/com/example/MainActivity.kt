@@ -570,6 +570,7 @@ private fun LauncherRoot(
                     onSetHomeLoopPaging = viewModel::setHomeLoopPaging,
                     onSetHomeGridColumns = viewModel::setHomeGridColumns,
                     onSetHomeGridRows = viewModel::setHomeGridRows,
+                    onSetIconShape = viewModel::setIconShape,
                     onSetHomeGesture = viewModel::setHomeGesture,
                     onSetHomeButtonAction = viewModel::setHomeButtonAction,
                     onSetDrawerColumns = viewModel::setDrawerColumns,

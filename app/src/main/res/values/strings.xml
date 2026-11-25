@@ -68,6 +68,12 @@
     <string name="home_gesture_group_launcher">Launcher</string>
     <string name="home_gesture_group_system">System</string>
     <string name="home_gesture_group_app">Apps</string>
+    <string name="settings_icon_shape_section">Icons</string>
+    <string name="settings_icon_shape">Icon shape</string>
+    <string name="icon_shape_system">System</string>
+    <string name="icon_shape_squircle">Squircle</string>
+    <string name="icon_shape_rounded_square">Rounded</string>
+    <string name="icon_shape_circle">Circle</string>
     <string name="home_action_none">None</string>
     <string name="home_action_none_page">Default paging</string>
     <string name="home_gesture_paused_by_loop">%1$s · Turn off loop paging</string>

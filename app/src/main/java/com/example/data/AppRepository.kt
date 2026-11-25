@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.example.model.AppItem
 import com.example.model.AppShortcutItem
+import com.example.model.IconShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.Collator
@@ -34,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AppRepository(private val context: Context) {
 
     private val iconCache = ConcurrentHashMap<String, ImageBitmap>()
+    @Volatile
+    private var cachedIconShape: IconShape = IconShape.SYSTEM
     private val shortcutIconCache = ConcurrentHashMap<String, ImageBitmap>()
     private val pm: PackageManager get() = context.packageManager
     private val torchEnabled = AtomicBoolean(false)
@@ -112,7 +115,11 @@ class AppRepository(private val context: Context) {
         }
     }
 
-    suspend fun loadInstalledApps(): List<AppItem> = withContext(Dispatchers.IO) {
+    suspend fun loadInstalledApps(iconShape: IconShape = IconShape.SYSTEM): List<AppItem> = withContext(Dispatchers.IO) {
+        if (cachedIconShape != iconShape) {
+            iconCache.clear()
+            cachedIconShape = iconShape
+        }
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
@@ -149,9 +156,9 @@ class AppRepository(private val context: Context) {
                 ?: pkg.substringAfterLast('.')
 
             val icon = iconCache[key] ?: runCatching {
-                resolveInfo.loadIcon(pm)
-                    ?.toBitmap(width = 144, height = 144, config = Bitmap.Config.ARGB_8888)
-                    ?.asImageBitmap()
+                resolveInfo.loadIcon(pm)?.let { drawable ->
+                    AppIconNormalizer.render(drawable, iconShape, sizePx = 144)
+                }
             }.getOrNull()?.also { bmp ->
                 iconCache[key] = bmp
             }

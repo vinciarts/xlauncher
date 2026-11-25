@@ -1,9 +1,14 @@
 package com.example.ui.screens.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -11,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
@@ -19,23 +25,28 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.HomeGridEngine
+import com.example.model.IconShape
 import com.example.model.LauncherUiState
 import com.example.ui.components.ExpressiveSectionHeader
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 internal fun LazyListScope.layoutSettingsItems(
     uiState: LauncherUiState,
     segmentedColors: ListItemColors,
     onSetHomeGridColumns: (Int) -> Unit,
     onSetHomeGridRows: (Int) -> Unit,
     onSetHomeLoopPaging: (Boolean) -> Unit,
+    onSetIconShape: (IconShape) -> Unit,
     onSetDrawerColumns: (Int) -> Unit,
     onSetAllTabHidden: (Boolean) -> Unit,
     onSetDrawerTabHidden: (String, Boolean) -> Unit,
@@ -99,6 +110,66 @@ internal fun LazyListScope.layoutSettingsItems(
                         Text(text = stringResource(R.string.settings_home_loop))
                     },
                 )
+            }
+        }
+    }
+
+    // Icon Shape Section
+    item(key = "icon_shape_section") {
+        val previewApps = remember(uiState.allApps) {
+            uiState.allApps.filter { it.icon != null }.take(5)
+        }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            ExpressiveSectionHeader(title = stringResource(R.string.settings_icon_shape_section))
+            SegmentedControlContainer(
+                index = 0,
+                count = 1,
+                containerColor = segmentedColors.containerColor,
+                title = stringResource(R.string.settings_icon_shape),
+            ) {
+                if (previewApps.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .testTag("icon_shape_preview_row"),
+                    ) {
+                        previewApps.forEach { app ->
+                            val bmp = app.icon
+                            if (bmp != null) {
+                                Image(
+                                    bitmap = bmp,
+                                    contentDescription = app.label,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(44.dp),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    IconShape.entries.forEach { shape ->
+                        val labelRes = when (shape) {
+                            IconShape.SYSTEM -> R.string.icon_shape_system
+                            IconShape.SQUIRCLE -> R.string.icon_shape_squircle
+                            IconShape.ROUNDED_SQUARE -> R.string.icon_shape_rounded_square
+                            IconShape.CIRCLE -> R.string.icon_shape_circle
+                        }
+                        FilterChip(
+                            selected = settings.iconShape == shape,
+                            onClick = { onSetIconShape(shape) },
+                            label = { Text(text = stringResource(labelRes)) },
+                            modifier = Modifier.testTag("chip_icon_shape_${shape.id}"),
+                        )
+                    }
+                }
             }
         }
     }
