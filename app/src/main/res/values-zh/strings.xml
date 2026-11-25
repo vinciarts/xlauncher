@@ -70,6 +70,10 @@
     <string name="home_gesture_group_app">应用</string>
     <string name="settings_icon_shape_section">图标</string>
     <string name="settings_home_show_labels">显示应用名称</string>
+    <string name="settings_dock_count">底栏图标数量</string>
+    <string name="dock_count_option">%1$d 个</string>
+    <string name="dock_count_off">关闭</string>
+    <string name="settings_drawer_auto_hide_empty_tabs">自动隐藏空文件夹</string>
     <string name="settings_icon_shape">图标形状</string>
     <string name="icon_shape_system">跟随系统</string>
     <string name="icon_shape_squircle">超椭圆</string>
@@ -112,6 +116,11 @@
     <string name="settings_drawer_tabs">抽屉标签页</string>
     <string name="settings_drawer_tabs_empty">暂无自定义标签页，可新建标签页对应用分组</string>
     <string name="drawer_tab_all">全部</string>
+    <string name="drawer_edit_mode_title">正在编辑抽屉</string>
+    <string name="drawer_edit_mode_hint">长按应用移动到标签页，长按标签页排序</string>
+    <string name="drawer_move_to_all">移回「全部」</string>
+    <string name="drawer_menu_edit_drawer">编辑抽屉</string>
+    <string name="cd_drawer_menu">抽屉菜单</string>
     <string name="drawer_tab_create_title">新建标签页</string>
     <string name="drawer_tab_edit_title">编辑标签页</string>
     <string name="drawer_tab_name_label">标签页名称</string>

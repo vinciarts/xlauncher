@@ -807,14 +807,6 @@ fun AppContextMenuDropdown(
                         onClick = { host.onTogglePinDock(app) },
                     )
                 )
-                add(
-                    ExpressiveMenuItemSpec(
-                        text = { Text(text = stringResource(R.string.action_manage_drawer_tabs)) },
-                        leadingIcon = { Icon(imageVector = Icons.Rounded.Tab, contentDescription = null) },
-                        testTag = "menu_drawer_tabs",
-                        onClick = { host.onOpenDrawerTabs(app) },
-                    )
-                )
             }
         }
 

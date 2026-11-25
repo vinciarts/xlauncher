@@ -27,6 +27,7 @@ data class RestoredLauncherSettings(
     val homeGridRows: Int,
     val placedHomeApps: List<PlacedHomeApp>,
     val dockKeys: List<String>,
+    val dockMaxItems: Int,
     val appGestures: Map<String, Map<SwipeDirection, String>>,
     val homeGestures: Map<SwipeDirection, HomeGestureAction>,
     val homeButtonAction: HomeGestureAction,
@@ -34,6 +35,8 @@ data class RestoredLauncherSettings(
     val iconShape: IconShape,
     val drawerTabs: List<DrawerTab>,
     val isAllTabHidden: Boolean,
+    val allTabName: String,
+    val autoHideEmptyDrawerTabs: Boolean,
     val searchShortcutsEnabled: Boolean,
     val searchContactsEnabled: Boolean,
     val searchThirdPartyAppsEnabled: Boolean,
@@ -105,7 +108,10 @@ object LauncherSettingsBackup {
         root.put("drawerColumns", settings.drawerColumns)
         root.put("iconShape", settings.iconShape.id)
         root.put("homeShowAppLabels", settings.homeShowAppLabels)
+        root.put("dockMaxItems", settings.dockMaxItems)
         root.put("isAllTabHidden", settings.isAllTabHidden)
+        root.put("allTabName", settings.allTabName)
+        root.put("autoHideEmptyDrawerTabs", settings.autoHideEmptyDrawerTabs)
 
         val tabsArr = JSONArray()
         for (tab in settings.drawerTabs) {
@@ -267,6 +273,8 @@ object LauncherSettingsBackup {
         // Guarantee at least one visible tab in the App Drawer
         val hasVisibleCustomTab = drawerTabs.any { !it.isHidden }
         val isAllTabHidden = rawAllHidden && hasVisibleCustomTab
+        val allTabName = root.optString("allTabName", "").trim()
+        val autoHideEmptyDrawerTabs = root.optBoolean("autoHideEmptyDrawerTabs", false)
 
         val searchShortcutsEnabled = root.optBoolean("searchShortcutsEnabled", false)
         val searchContactsEnabled = root.optBoolean("searchContactsEnabled", false)
@@ -281,6 +289,8 @@ object LauncherSettingsBackup {
         val searchWebEngine = WebSearchEngine.decode(root.optString("searchWebEngine", ""))
         val iconShape = IconShape.decode(root.optString("iconShape", ""))
         val homeShowAppLabels = root.optBoolean("homeShowAppLabels", true)
+        val dockMaxItems = root.optInt("dockMaxItems", LauncherPreferencesRepository.DEFAULT_DOCK_ITEMS)
+            .coerceIn(LauncherPreferencesRepository.MIN_DOCK_ITEMS, LauncherPreferencesRepository.MAX_DOCK_ITEMS)
 
         RestoredLauncherSettings(
             homePageCount = homePageCount,
@@ -290,6 +300,7 @@ object LauncherSettingsBackup {
             homeGridRows = homeGridRows,
             placedHomeApps = placedHomeApps,
             dockKeys = dockKeys,
+            dockMaxItems = dockMaxItems,
             appGestures = appGestures,
             homeGestures = homeGestures,
             homeButtonAction = homeButtonAction,
@@ -297,6 +308,8 @@ object LauncherSettingsBackup {
             iconShape = iconShape,
             drawerTabs = drawerTabs,
             isAllTabHidden = isAllTabHidden,
+            allTabName = allTabName,
+            autoHideEmptyDrawerTabs = autoHideEmptyDrawerTabs,
             searchShortcutsEnabled = searchShortcutsEnabled,
             searchContactsEnabled = searchContactsEnabled,
             searchThirdPartyAppsEnabled = searchThirdPartyAppsEnabled,

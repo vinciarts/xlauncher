@@ -1122,6 +1122,11 @@ fun HomeScreen(
                         .testTag("home_dock"),
                 ) {
                     dockApps.forEachIndexed { dockIndex, app ->
+                        val dockIconSize = when {
+                            dockApps.size >= 7 -> 40.dp
+                            dockApps.size == 6 -> 44.dp
+                            else -> 50.dp
+                        }
                         key(app.componentKey) {
                             val boundDirs = appGestures[app.componentKey]?.keys ?: persistentSetOf()
                             val isBeingDragged = (dragSession?.item as? DragItem.DockApp)?.app?.componentKey == app.componentKey
@@ -1136,7 +1141,7 @@ fun HomeScreen(
                                     boundDirections = boundDirs,
                                     showLabel = false,
                                     onWallpaper = true,
-                                    iconSize = 50.dp,
+                                    iconSize = dockIconSize,
                                     onDownPointer = { id, dirs ->
                                         lastIconPointerId = id
                                         lastIconBoundDirs = dirs

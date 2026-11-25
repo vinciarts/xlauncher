@@ -353,6 +353,7 @@ data class LauncherSettings(
     val homeLoopPaging: Boolean = true,
     val homeGridColumns: Int = HomeGridEngine.DEFAULT_HOME_GRID_COLUMNS,
     val homeGridRows: Int = HomeGridEngine.DEFAULT_HOME_GRID_ROWS,
+    val dockMaxItems: Int = 5,
     val homePages: ImmutableMap<Int, ImmutableList<String>> = persistentMapOf(),
     val placedHomeApps: ImmutableList<PlacedHomeApp> = persistentListOf(),
     val placedWidgets: ImmutableList<PlacedWidget> = persistentListOf(),
@@ -369,6 +370,8 @@ data class LauncherSettings(
     // Custom tabs shown after the built-in "All" tab in the App Drawer
     val drawerTabs: ImmutableList<DrawerTab> = persistentListOf(),
     val isAllTabHidden: Boolean = false,
+    val allTabName: String = "",
+    val autoHideEmptyDrawerTabs: Boolean = false,
     val hasSeededDefaults: Boolean = false,
     // Opt-in Universal Search sources (local sources off by default; web search enabled by default)
     val searchShortcutsEnabled: Boolean = false,

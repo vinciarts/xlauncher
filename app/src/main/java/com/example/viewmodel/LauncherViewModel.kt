@@ -225,7 +225,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         val dockApps = settings.dockKeys
             .mapNotNull { appsByKey[it] }
-            .take(LauncherPreferencesRepository.MAX_DOCK_ITEMS)
+            .take(settings.dockMaxItems)
             .toImmutableList()
 
         val homePageApps = ArrayList<ImmutableList<HomeAppSlot>>(settings.homePageCount)
@@ -1141,6 +1141,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { prefsRepository.setDrawerTabApps(tabId, appKeys) }
     }
 
+    fun moveAppToDrawerTab(componentKey: String, targetTabId: String) {
+        emitActionHaptic()
+        viewModelScope.launch { prefsRepository.moveAppToDrawerTab(componentKey, targetTabId) }
+    }
+
     fun setAppDrawerTabs(componentKey: String, selectedTabIds: Set<String>) {
         appTabsTarget.value = null
         viewModelScope.launch { prefsRepository.setAppDrawerTabs(componentKey, selectedTabIds) }
@@ -1156,6 +1161,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             if (!ok) {
                 snackbarMessage.value = getApplication<Application>().getString(R.string.drawer_tab_keep_one_visible)
             }
+        }
+    }
+
+    fun setAllTabName(name: String) {
+        viewModelScope.launch {
+            prefsRepository.setAllTabName(name)
+        }
+    }
+
+    fun setAutoHideEmptyDrawerTabs(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.setAutoHideEmptyDrawerTabs(enabled)
         }
     }
 
@@ -1442,6 +1459,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setDockMaxItems(count: Int) {
+        viewModelScope.launch {
+            prefsRepository.setDockMaxItems(count)
+        }
+    }
+
     fun openContact(contact: ContactSearchResult) {
         val ok = searchRepository.openContact(contact)
         if (ok) {
@@ -1510,30 +1533,47 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         apps: ImmutableList<AppItem>,
         settings: LauncherSettings,
     ): ImmutableList<DrawerTabPage> {
+        // Exclusive folder model: each app belongs to at most one custom folder tab;
+        // "All" acts as the root directory containing all remaining unassigned apps.
+        val assignedKeys = HashSet<String>()
+        val folderKeySets = LinkedHashMap<String, Set<String>>(settings.drawerTabs.size)
+        for (tab in settings.drawerTabs) {
+            val exclusive = HashSet<String>()
+            for (k in tab.appKeys) {
+                if (assignedKeys.add(k)) {
+                    exclusive.add(k)
+                }
+            }
+            folderKeySets[tab.id] = exclusive
+        }
+        val rootApps = apps.filterNot { it.componentKey in assignedKeys }.toImmutableList()
+
         val result = ArrayList<DrawerTabPage>(settings.drawerTabs.size + 1)
-        if (!settings.isAllTabHidden) {
+        if (!settings.isAllTabHidden && !(settings.autoHideEmptyDrawerTabs && rootApps.isEmpty())) {
             result.add(
                 DrawerTabPage(
                     id = DrawerTab.ALL_TAB_ID,
-                    name = "",
+                    name = settings.allTabName,
                     isAllTab = true,
-                    apps = apps,
+                    apps = rootApps,
                 )
             )
         }
         for (tab in settings.drawerTabs) {
             if (tab.isHidden) continue
-            val keySet = tab.appKeys.toSet()
+            val keySet = folderKeySets[tab.id].orEmpty()
+            val tabApps = if (keySet.isEmpty()) {
+                persistentListOf()
+            } else {
+                apps.filter { it.componentKey in keySet }.toImmutableList()
+            }
+            if (settings.autoHideEmptyDrawerTabs && tabApps.isEmpty()) continue
             result.add(
                 DrawerTabPage(
                     id = tab.id,
                     name = tab.name,
                     isAllTab = false,
-                    apps = if (keySet.isEmpty()) {
-                        persistentListOf()
-                    } else {
-                        apps.filter { it.componentKey in keySet }.toImmutableList()
-                    },
+                    apps = tabApps,
                 )
             )
         }
@@ -1541,9 +1581,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             result.add(
                 DrawerTabPage(
                     id = DrawerTab.ALL_TAB_ID,
-                    name = "",
+                    name = settings.allTabName,
                     isAllTab = true,
-                    apps = apps,
+                    apps = rootApps,
                 )
             )
         }

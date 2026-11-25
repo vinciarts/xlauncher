@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.LauncherPreferencesRepository
 import com.example.model.HomeGridEngine
 import com.example.model.IconShape
 import com.example.model.LauncherUiState
@@ -42,10 +43,12 @@ internal fun LazyListScope.layoutSettingsItems(
     segmentedColors: ListItemColors,
     onSetHomeGridColumns: (Int) -> Unit,
     onSetHomeGridRows: (Int) -> Unit,
+    onSetDockMaxItems: (Int) -> Unit,
     onSetHomeLoopPaging: (Boolean) -> Unit,
     onSetHomeShowAppLabels: (Boolean) -> Unit,
     onSetIconShape: (IconShape) -> Unit,
     onSetDrawerColumns: (Int) -> Unit,
+    onSetAutoHideEmptyDrawerTabs: (Boolean) -> Unit,
     onSetAllTabHidden: (Boolean) -> Unit,
     onSetDrawerTabHidden: (String, Boolean) -> Unit,
     onOpenCreateTabDialog: () -> Unit,
@@ -63,7 +66,7 @@ internal fun LazyListScope.layoutSettingsItems(
             ) {
                 SegmentedControlContainer(
                     index = 0,
-                    count = 4,
+                    count = 5,
                     containerColor = segmentedColors.containerColor,
                     title = stringResource(R.string.settings_home_columns),
                     valueLabel = stringResource(R.string.grid_columns_option, settings.homeGridColumns),
@@ -79,7 +82,7 @@ internal fun LazyListScope.layoutSettingsItems(
 
                 SegmentedControlContainer(
                     index = 1,
-                    count = 4,
+                    count = 5,
                     containerColor = segmentedColors.containerColor,
                     title = stringResource(R.string.settings_home_rows),
                     valueLabel = stringResource(R.string.grid_rows_option, settings.homeGridRows),
@@ -93,9 +96,29 @@ internal fun LazyListScope.layoutSettingsItems(
                     )
                 }
 
+                SegmentedControlContainer(
+                    index = 2,
+                    count = 5,
+                    containerColor = segmentedColors.containerColor,
+                    title = stringResource(R.string.settings_dock_count),
+                    valueLabel = if (settings.dockMaxItems == 0) {
+                        stringResource(R.string.dock_count_off)
+                    } else {
+                        stringResource(R.string.dock_count_option, settings.dockMaxItems)
+                    },
+                ) {
+                    DiscreteIntSlider(
+                        value = settings.dockMaxItems,
+                        minValue = LauncherPreferencesRepository.MIN_DOCK_ITEMS,
+                        maxValue = LauncherPreferencesRepository.MAX_DOCK_ITEMS,
+                        testTag = "slider_dock_count",
+                        onValueChange = onSetDockMaxItems,
+                    )
+                }
+
                 SegmentedListItem(
                     onClick = { onSetHomeLoopPaging(!settings.homeLoopPaging) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 2, count = 4),
+                    shapes = ListItemDefaults.segmentedShapes(index = 3, count = 5),
                     colors = segmentedColors,
                     trailingContent = {
                         Switch(
@@ -111,7 +134,7 @@ internal fun LazyListScope.layoutSettingsItems(
 
                 SegmentedListItem(
                     onClick = { onSetHomeShowAppLabels(!settings.homeShowAppLabels) },
-                    shapes = ListItemDefaults.segmentedShapes(index = 3, count = 4),
+                    shapes = ListItemDefaults.segmentedShapes(index = 4, count = 5),
                     colors = segmentedColors,
                     trailingContent = {
                         Switch(
@@ -184,23 +207,44 @@ internal fun LazyListScope.layoutSettingsItems(
         }
     }
 
-    // Drawer Columns Section
+    // Drawer Section
     item(key = "drawer_columns_section") {
         Column(modifier = Modifier.fillMaxWidth()) {
             ExpressiveSectionHeader(title = stringResource(R.string.settings_drawer_section))
-            SegmentedControlContainer(
-                index = 0,
-                count = 1,
-                containerColor = segmentedColors.containerColor,
-                title = stringResource(R.string.settings_drawer_columns),
-                valueLabel = stringResource(R.string.grid_columns_option, settings.drawerColumns),
+            Column(
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                DiscreteIntSlider(
-                    value = settings.drawerColumns,
-                    minValue = HomeGridEngine.MIN_HOME_GRID_COLUMNS,
-                    maxValue = HomeGridEngine.MAX_HOME_GRID_COLUMNS,
-                    testTag = "slider_drawer_cols",
-                    onValueChange = onSetDrawerColumns,
+                SegmentedControlContainer(
+                    index = 0,
+                    count = 2,
+                    containerColor = segmentedColors.containerColor,
+                    title = stringResource(R.string.settings_drawer_columns),
+                    valueLabel = stringResource(R.string.grid_columns_option, settings.drawerColumns),
+                ) {
+                    DiscreteIntSlider(
+                        value = settings.drawerColumns,
+                        minValue = HomeGridEngine.MIN_HOME_GRID_COLUMNS,
+                        maxValue = HomeGridEngine.MAX_HOME_GRID_COLUMNS,
+                        testTag = "slider_drawer_cols",
+                        onValueChange = onSetDrawerColumns,
+                    )
+                }
+
+                SegmentedListItem(
+                    onClick = { onSetAutoHideEmptyDrawerTabs(!settings.autoHideEmptyDrawerTabs) },
+                    shapes = ListItemDefaults.segmentedShapes(index = 1, count = 2),
+                    colors = segmentedColors,
+                    trailingContent = {
+                        Switch(
+                            checked = settings.autoHideEmptyDrawerTabs,
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("switch_auto_hide_empty_tabs"),
+                        )
+                    },
+                    content = {
+                        Text(text = stringResource(R.string.settings_drawer_auto_hide_empty_tabs))
+                    },
                 )
             }
         }

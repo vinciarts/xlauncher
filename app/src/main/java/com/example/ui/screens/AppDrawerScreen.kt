@@ -2,7 +2,14 @@ package com.example.ui.screens
 
 import android.view.ViewConfiguration
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,12 +22,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -28,9 +36,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,7 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,8 +65,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -62,16 +80,23 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import com.example.R
 import com.example.model.AppActionOrigin
 import com.example.model.AppItem
@@ -87,20 +112,29 @@ import com.example.ui.components.AppIconTile
 import com.example.ui.components.CreateDrawerTabDialog
 import com.example.ui.components.DrawerUniversalSearchResults
 import com.example.ui.components.EditDrawerTabDialog
+import com.example.ui.components.ExpressiveMenuGroupsContent
+import com.example.ui.components.ExpressiveMenuItemSpec
 import com.example.ui.components.ExpressiveSearchField
 import com.example.ui.components.verticalFadingEdge
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalFoundationApi::class,
+)
 @Composable
 fun AppDrawerScreen(
     isActive: Boolean,
     allApps: ImmutableList<AppItem>,
     drawerTabs: ImmutableList<DrawerTab>,
     drawerTabPages: ImmutableList<DrawerTabPage>,
+    isAllTabHidden: Boolean = false,
+    allTabName: String = "",
     filteredDrawerApps: ImmutableList<AppItem>,
     hasAnyExtraSearchEnabled: Boolean,
     matchedShortcuts: ImmutableList<AppShortcutItem>,
@@ -131,10 +165,47 @@ fun AppDrawerScreen(
     onSetTabApps: (String, Set<String>) -> Unit,
     onMoveTab: (String, Int) -> Unit,
     onSetTabHidden: (String, Boolean) -> Unit,
+    onSetAllTabHidden: (Boolean) -> Unit = {},
+    onSetAllTabName: (String) -> Unit = {},
     onDeleteTab: (String) -> Unit,
+    onMoveAppToTab: (String, String) -> Unit = { _, _ -> },
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    BackHandler(enabled = isActive, onBack = onBack)
+    var isEditMode by remember { mutableStateOf(false) }
+    var showDrawerMenu by remember { mutableStateOf(false) }
+    var draggedApp by remember { mutableStateOf<AppItem?>(null) }
+    var dragFingerRoot by remember { mutableStateOf(Offset.Zero) }
+    var draggingTabId by remember { mutableStateOf<String?>(null) }
+    var draggingTabStartIndex by remember { mutableStateOf(-1) }
+    var draggingTabTargetIndex by remember { mutableStateOf(-1) }
+    var draggingTabOffsetX by remember { mutableStateOf(0f) }
+    val tabBounds = remember { mutableStateMapOf<String, Rect>() }
+    var rootDropZoneBounds by remember { mutableStateOf<Rect?>(null) }
+    var rootOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
+    val haptic = LocalHapticFeedback.current
+
+    BackHandler(enabled = isActive && !isEditMode, onBack = onBack)
+    BackHandler(enabled = isActive && isEditMode) {
+        draggedApp = null
+        draggingTabId = null
+        draggingTabStartIndex = -1
+        draggingTabTargetIndex = -1
+        draggingTabOffsetX = 0f
+        isEditMode = false
+    }
+
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            showDrawerMenu = false
+            draggedApp = null
+            draggingTabId = null
+            draggingTabStartIndex = -1
+            draggingTabTargetIndex = -1
+            draggingTabOffsetX = 0f
+            isEditMode = false
+        }
+    }
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -155,12 +226,13 @@ fun AppDrawerScreen(
     val scope = rememberCoroutineScope()
     val currentOnClose by rememberUpdatedState(onClose)
     val currentIsActive by rememberUpdatedState(isActive)
+    val currentIsEditMode by rememberUpdatedState(isEditMode)
     val viewConfig = remember(context) { ViewConfiguration.get(context) }
     val pagingTouchSlopPx = viewConfig.scaledPagingTouchSlop.toFloat()
     val minFlingVelocityPx = viewConfig.scaledMinimumFlingVelocity.toFloat()
     val instantTriggerPx = with(density) { 48.dp.toPx() }.coerceAtLeast(pagingTouchSlopPx)
 
-    val pages = drawerTabPages.ifEmpty {
+    val normalPages = drawerTabPages.ifEmpty {
         persistentListOf(
             DrawerTabPage(
                 id = DrawerTab.ALL_TAB_ID,
@@ -170,6 +242,46 @@ fun AppDrawerScreen(
             )
         )
     }
+
+    // In Edit Mode, reveal ALL tabs (including hidden All root & hidden folders)
+    // so unassigned apps can always be dragged into folders.
+    val editModePages = remember(allApps, drawerTabs, allTabName) {
+        val assigned = HashSet<String>()
+        val folderSets = LinkedHashMap<String, Set<String>>(drawerTabs.size)
+        for (tab in drawerTabs) {
+            val exclusive = HashSet<String>()
+            for (k in tab.appKeys) {
+                if (assigned.add(k)) exclusive.add(k)
+            }
+            folderSets[tab.id] = exclusive
+        }
+        val rootApps = allApps.filterNot { it.componentKey in assigned }.toImmutableList()
+        val list = ArrayList<DrawerTabPage>(drawerTabs.size + 1)
+        list.add(
+            DrawerTabPage(
+                id = DrawerTab.ALL_TAB_ID,
+                name = allTabName,
+                isAllTab = true,
+                apps = rootApps,
+            )
+        )
+        for (tab in drawerTabs) {
+            val keys = folderSets[tab.id].orEmpty()
+            list.add(
+                DrawerTabPage(
+                    id = tab.id,
+                    name = tab.name,
+                    isAllTab = false,
+                    apps = if (keys.isEmpty()) persistentListOf()
+                    else allApps.filter { it.componentKey in keys }.toImmutableList(),
+                )
+            )
+        }
+        list.toImmutableList()
+    }
+
+    val visibleNormalTabIds = remember(normalPages) { normalPages.map { it.id }.toSet() }
+    val pages = if (isEditMode) editModePages else normalPages
 
     val pageCount = pages.size
     val loopEnabled = pageCount > 1
@@ -207,7 +319,7 @@ fun AppDrawerScreen(
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                if (!currentIsActive || !startedAtTop) return Offset.Zero
+                if (!currentIsActive || currentIsEditMode || !startedAtTop) return Offset.Zero
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
                 if (consumed.y != 0f) {
                     // User scrolled the list in this gesture -> lock out dismiss until next touch
@@ -227,7 +339,7 @@ fun AppDrawerScreen(
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (!currentIsActive || !startedAtTop) return Velocity.Zero
+                if (!currentIsActive || currentIsEditMode || !startedAtTop) return Velocity.Zero
                 if (overScrollDown > 0f && available.y >= minFlingVelocityPx) {
                     overScrollDown = 0f
                     currentOnClose()
@@ -251,7 +363,7 @@ fun AppDrawerScreen(
         detectVerticalDragGestures(
             onDragStart = {
                 dragY = 0f
-                triggered = !currentIsActive
+                triggered = !currentIsActive || currentIsEditMode
                 velocityTracker.resetTracking()
             },
             onDragEnd = {
@@ -329,11 +441,29 @@ fun AppDrawerScreen(
             currentTabPage.apps.isEmpty() || (pageAtTopMap[currentPageIndex] != false)
         }
 
+        val hoveredDropTabId: String? = if (isEditMode && draggedApp != null) {
+            val finger = dragFingerRoot
+            val overRootZone = !currentTabPage.isAllTab &&
+                rootDropZoneBounds?.contains(finger) == true
+            if (overRootZone) {
+                DrawerTab.ALL_TAB_ID
+            } else {
+                pages.firstOrNull { page ->
+                    page.id != currentTabPage.id && tabBounds[page.id]?.contains(finger) == true
+                }?.id
+            }
+        } else {
+            null
+        }
+
         Box(
             contentAlignment = Alignment.TopCenter,
             modifier = modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
+                .onGloballyPositioned { coords ->
+                    rootOffsetInWindow = coords.positionInRoot()
+                }
                 .pointerInput(pullFromTopDismiss) {
                     awaitPointerEventScope {
                         while (true) {
@@ -354,27 +484,182 @@ fun AppDrawerScreen(
                     .navigationBarsPadding()
                     .imePadding(),
             ) {
-                // Top search header; dragging or flinging down tracks finger 1:1 to close drawer
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(directPullDownModifier),
-                ) {
-                    ExpressiveSearchField(
-                        query = drawerSearchQuery,
-                        onQueryChange = onSearchQueryChange,
-                        placeholder = stringResource(
-                            if (hasAnyExtraSearchEnabled) R.string.search_universal_placeholder
-                            else R.string.search_apps_placeholder
-                        ),
-                        enabled = isActive,
-                        focusRequester = focusRequester,
-                        inputTestTag = "drawer_search_input",
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-                    )
+                // Top bar: Search field in Normal Mode, Done / Move-to-All bar in Edit Mode
+                if (isEditMode) {
+                    val isDraggingFromFolder = draggedApp != null && !currentTabPage.isAllTab
+                    val isHoveringRootZone = hoveredDropTabId == DrawerTab.ALL_TAB_ID &&
+                        rootDropZoneBounds?.contains(dragFingerRoot) == true
+                    if (isDraggingFromFolder) {
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            color = if (isHoveringRootZone) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .height(48.dp)
+                                .onGloballyPositioned { coords ->
+                                    rootDropZoneBounds = coords.boundsInRoot()
+                                }
+                                .testTag("drawer_move_to_all_zone"),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
+                                    contentDescription = null,
+                                    tint = if (isHoveringRootZone) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.drawer_move_to_all),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (isHoveringRootZone) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 16.dp, top = 10.dp, bottom = 8.dp)
+                                .testTag("drawer_edit_mode_bar"),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.drawer_edit_mode_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(R.string.drawer_edit_mode_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { showCreateTabDialog = true },
+                                modifier = Modifier.testTag("drawer_add_tab_button"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = stringResource(R.string.cd_add_drawer_tab),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = {
+                                    draggedApp = null
+                                    draggingTabId = null
+                                    draggingTabOffsetX = 0f
+                                    isEditMode = false
+                                },
+                                modifier = Modifier.testTag("drawer_edit_done_button"),
+                            ) {
+                                Text(text = stringResource(R.string.dialog_done))
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(directPullDownModifier)
+                            .padding(start = 16.dp, end = 6.dp, top = 12.dp, bottom = 8.dp),
+                    ) {
+                        ExpressiveSearchField(
+                            query = drawerSearchQuery,
+                            onQueryChange = onSearchQueryChange,
+                            placeholder = stringResource(
+                                if (hasAnyExtraSearchEnabled) R.string.search_universal_placeholder
+                                else R.string.search_apps_placeholder
+                            ),
+                            enabled = isActive,
+                            focusRequester = focusRequester,
+                            inputTestTag = "drawer_search_input",
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box {
+                            IconButton(
+                                onClick = { showDrawerMenu = true },
+                                modifier = Modifier.testTag("drawer_menu_button"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MoreVert,
+                                    contentDescription = stringResource(R.string.cd_drawer_menu),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            DropdownMenuPopup(
+                                expanded = showDrawerMenu,
+                                onDismissRequest = { showDrawerMenu = false },
+                            ) {
+                                ExpressiveMenuGroupsContent(
+                                    groups = listOf(
+                                        listOf(
+                                            ExpressiveMenuItemSpec(
+                                                text = { Text(stringResource(R.string.drawer_menu_edit_drawer)) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Edit,
+                                                        contentDescription = null,
+                                                    )
+                                                },
+                                                testTag = "drawer_menu_edit_item",
+                                                onClick = {
+                                                    showDrawerMenu = false
+                                                    onSearchQueryChange("")
+                                                    focusManager.clearFocus(force = true)
+                                                    keyboardController?.hide()
+                                                    isEditMode = true
+                                                },
+                                            ),
+                                            ExpressiveMenuItemSpec(
+                                                text = { Text(stringResource(R.string.settings_title)) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Settings,
+                                                        contentDescription = null,
+                                                    )
+                                                },
+                                                testTag = "drawer_menu_settings_item",
+                                                onClick = {
+                                                    showDrawerMenu = false
+                                                    onOpenSettings()
+                                                },
+                                            ),
+                                        )
+                                    ),
+                                    parentExpanded = showDrawerMenu,
+                                )
+                            }
+                        }
+                    }
                 }
 
-                if (drawerSearchQuery.isNotBlank()) {
+                if (!isEditMode && drawerSearchQuery.isNotBlank()) {
                     DrawerUniversalSearchResults(
                         query = drawerSearchQuery,
                         cols = drawerColumns,
@@ -446,15 +731,50 @@ fun AppDrawerScreen(
                                 tabIndex = realPage,
                                 isActive = isActive,
                                 isCurrentPage = virtualPage == pagerState.currentPage,
+                                isEditMode = isEditMode,
+                                draggedAppKey = draggedApp?.componentKey,
                                 onAppClick = onAppClick,
                                 appMenuHost = appMenuHost,
                                 onAtTopChanged = { atTop -> pageAtTopMap[realPage] = atTop },
+                                onAppDragStart = { app, fingerRoot ->
+                                    draggedApp = app
+                                    dragFingerRoot = fingerRoot
+                                },
+                                onAppDragMove = { fingerRoot ->
+                                    dragFingerRoot = fingerRoot
+                                },
+                                onAppDragEnd = { fingerRoot ->
+                                    dragFingerRoot = fingerRoot
+                                    val moving = draggedApp
+                                    val targetId = if (moving != null) {
+                                        val overRoot = !currentTabPage.isAllTab &&
+                                            rootDropZoneBounds?.contains(fingerRoot) == true
+                                        if (overRoot) {
+                                            DrawerTab.ALL_TAB_ID
+                                        } else {
+                                            pages.firstOrNull { page ->
+                                                page.id != currentTabPage.id &&
+                                                    tabBounds[page.id]?.contains(fingerRoot) == true
+                                            }?.id
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                    draggedApp = null
+                                    if (moving != null && targetId != null && targetId != currentTabPage.id) {
+                                        onMoveAppToTab(moving.componentKey, targetId)
+                                    }
+                                },
+                                onAppDragCancel = {
+                                    draggedApp = null
+                                },
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }
 
-                    // Bottom native Material 3 Scrollable TabRow + quick Edit / Add tab buttons
+                    // Bottom Tab bar: full width in both modes; in Edit Mode, custom tabs can be
+                    // dragged left/right to reorder, and any tab serves as a drop target for apps.
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -462,76 +782,210 @@ fun AppDrawerScreen(
                             .fillMaxWidth()
                             .then(directPullDownModifier),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        PrimaryScrollableTabRow(
+                            selectedTabIndex = currentPageIndex,
+                            minTabWidth = 56.dp,
+                            edgePadding = 8.dp,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            divider = {},
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 8.dp, end = 4.dp),
+                                .testTag("drawer_tab_row"),
                         ) {
-                            PrimaryScrollableTabRow(
-                                selectedTabIndex = currentPageIndex,
-                                edgePadding = 8.dp,
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                divider = {},
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("drawer_tab_row"),
-                            ) {
-                                pages.forEachIndexed { index, tabPage ->
-                                    val title = if (tabPage.isAllTab) {
-                                        stringResource(R.string.drawer_tab_all)
-                                    } else {
-                                        tabPage.name
+                            val firstCustomIdx = pages.indexOfFirst { !it.isAllTab }.coerceAtLeast(0)
+                            val draggedTabWidthPx = draggingTabId?.let { tabBounds[it]?.width } ?: 0f
+
+                            pages.forEachIndexed { index, tabPage ->
+                                val title = if (tabPage.isAllTab) {
+                                    tabPage.name.ifBlank { stringResource(R.string.drawer_tab_all) }
+                                } else {
+                                    tabPage.name
+                                }
+                                val isSelected = currentPageIndex == index
+                                val isDropTarget = hoveredDropTabId == tabPage.id
+                                val isBeingDraggedTab = isEditMode && draggingTabId == tabPage.id
+
+                                val neighborTargetShift = if (isEditMode && draggingTabId != null && !isBeingDraggedTab && !tabPage.isAllTab) {
+                                    when {
+                                        draggingTabStartIndex < draggingTabTargetIndex &&
+                                            index in (draggingTabStartIndex + 1)..draggingTabTargetIndex -> -draggedTabWidthPx
+                                        draggingTabStartIndex > draggingTabTargetIndex &&
+                                            index in draggingTabTargetIndex until draggingTabStartIndex -> draggedTabWidthPx
+                                        else -> 0f
                                     }
-                                    Tab(
-                                        selected = currentPageIndex == index,
-                                        onClick = {
-                                            if (loopEnabled && index != currentPageIndex) {
-                                                scope.launch {
-                                                    pagerState.animateScrollToPage(
-                                                        pagerState.currentPage + (index - currentPageIndex)
+                                } else {
+                                    0f
+                                }
+                                val animatedNeighborShiftX by animateFloatAsState(
+                                    targetValue = neighborTargetShift,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow,
+                                    ),
+                                    label = "tab_reorder_shift_${tabPage.id}",
+                                )
+
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                                        .zIndex(if (isBeingDraggedTab) 2f else 0f)
+                                        .graphicsLayer {
+                                            if (isBeingDraggedTab) {
+                                                translationX = draggingTabOffsetX
+                                                scaleX = 1.08f
+                                                scaleY = 1.08f
+                                            } else {
+                                                translationX = animatedNeighborShiftX
+                                            }
+                                        }
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(
+                                            when {
+                                                isDropTarget -> MaterialTheme.colorScheme.primaryContainer
+                                                isBeingDraggedTab -> MaterialTheme.colorScheme.secondaryContainer
+                                                else -> Color.Transparent
+                                            }
+                                        )
+                                        .onGloballyPositioned { coords ->
+                                            // Record rest bounds when not currently dragging any tab
+                                            if (draggingTabId == null) {
+                                                tabBounds[tabPage.id] = coords.boundsInRoot()
+                                            }
+                                        }
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (index != currentPageIndex) {
+                                                    if (loopEnabled) {
+                                                        scope.launch {
+                                                            pagerState.animateScrollToPage(
+                                                                pagerState.currentPage + (index - currentPageIndex)
+                                                            )
+                                                        }
+                                                    }
+                                                } else if (isEditMode) {
+                                                    editingTabId = tabPage.id
+                                                }
+                                            },
+                                        )
+                                        .then(
+                                            if (isEditMode && !tabPage.isAllTab) {
+                                                Modifier.pointerInput(tabPage.id, isEditMode, pages.size) {
+                                                    detectDragGesturesAfterLongPress(
+                                                        onDragStart = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            draggingTabId = tabPage.id
+                                                            draggingTabStartIndex = index
+                                                            draggingTabTargetIndex = index
+                                                            draggingTabOffsetX = 0f
+                                                        },
+                                                        onDrag = { change, dragAmount ->
+                                                            change.consume()
+                                                            draggingTabOffsetX += dragAmount.x
+                                                            val startBounds = tabBounds[tabPage.id]
+                                                            if (startBounds != null) {
+                                                                val draggedCenterX = startBounds.center.x + draggingTabOffsetX
+                                                                var computed = index
+                                                                if (draggedCenterX > startBounds.center.x) {
+                                                                    for (i in (index + 1)..pages.lastIndex) {
+                                                                        val b = tabBounds[pages[i].id] ?: continue
+                                                                        if (draggedCenterX > b.center.x) {
+                                                                            computed = i
+                                                                        }
+                                                                    }
+                                                                } else if (draggedCenterX < startBounds.center.x) {
+                                                                    for (i in (index - 1) downTo firstCustomIdx) {
+                                                                        val b = tabBounds[pages[i].id] ?: continue
+                                                                        if (draggedCenterX < b.center.x) {
+                                                                            computed = i
+                                                                        }
+                                                                    }
+                                                                }
+                                                                if (computed != draggingTabTargetIndex) {
+                                                                    draggingTabTargetIndex = computed
+                                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                }
+                                                            }
+                                                        },
+                                                        onDragEnd = {
+                                                            val delta = draggingTabTargetIndex - draggingTabStartIndex
+                                                            val movedId = draggingTabId
+                                                            draggingTabId = null
+                                                            draggingTabStartIndex = -1
+                                                            draggingTabTargetIndex = -1
+                                                            draggingTabOffsetX = 0f
+                                                            if (movedId != null && delta != 0) {
+                                                                onMoveTab(movedId, delta)
+                                                            }
+                                                        },
+                                                        onDragCancel = {
+                                                            draggingTabId = null
+                                                            draggingTabStartIndex = -1
+                                                            draggingTabTargetIndex = -1
+                                                            draggingTabOffsetX = 0f
+                                                        },
                                                     )
                                                 }
+                                            } else {
+                                                Modifier
                                             }
-                                        },
-                                        text = {
-                                            Text(
-                                                text = title,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        },
-                                        modifier = Modifier.testTag("drawer_tab_${tabPage.id}"),
-                                    )
-                                }
-                            }
-
-                            if (!currentTabPage.isAllTab) {
-                                IconButton(
-                                    onClick = { editingTabId = currentTabPage.id },
-                                    modifier = Modifier.testTag("drawer_edit_tab_button"),
+                                        )
+                                        .padding(horizontal = 12.dp)
+                                        .testTag("drawer_tab_${tabPage.id}"),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Edit,
-                                        contentDescription = stringResource(R.string.cd_edit_drawer_tab),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
+                                    val isHiddenInNormal = isEditMode && tabPage.id !in visibleNormalTabIds
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = when {
+                                            isDropTarget -> MaterialTheme.colorScheme.onPrimaryContainer
+                                            isBeingDraggedTab -> MaterialTheme.colorScheme.onSecondaryContainer
+                                            isSelected -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.alpha(if (isHiddenInNormal) 0.55f else 1f),
                                     )
                                 }
-                            }
-
-                            IconButton(
-                                onClick = { showCreateTabDialog = true },
-                                modifier = Modifier.testTag("drawer_add_tab_button"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = stringResource(R.string.cd_add_drawer_tab),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp),
-                                )
                             }
                         }
+                    }
+                }
+            }
+
+            // Floating lifted ghost icon when dragging an app to a Tab in Edit Mode
+            val liftingApp = draggedApp
+            if (isEditMode && liftingApp != null) {
+                val ghostSizeDp = 56.dp
+                val halfPx = with(density) { (ghostSizeDp / 2).toPx() }
+                val localPos = dragFingerRoot - rootOffsetInWindow
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset {
+                            IntOffset(
+                                x = (localPos.x - halfPx).roundToInt(),
+                                y = (localPos.y - halfPx).roundToInt(),
+                            )
+                        }
+                        .size(ghostSizeDp)
+                        .graphicsLayer {
+                            scaleX = 1.15f
+                            scaleY = 1.15f
+                            alpha = 0.92f
+                        },
+                ) {
+                    val bmp = liftingApp.icon
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp,
+                            contentDescription = liftingApp.label,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
             }
@@ -540,36 +994,50 @@ fun AppDrawerScreen(
 
     if (showCreateTabDialog) {
         CreateDrawerTabDialog(
-            allApps = allApps,
-            onConfirm = { name, appKeys ->
+            onConfirm = { name ->
                 showCreateTabDialog = false
                 pendingSelectNewTabFromCount = pageCount
-                onCreateTab(name, appKeys)
+                onCreateTab(name, emptyList())
             },
             onDismiss = { showCreateTabDialog = false },
         )
     }
 
-    if (editingTab != null) {
-        val customIdx = drawerTabs.indexOfFirst { it.id == editingTab.id }
+    if (editingTabId == DrawerTab.ALL_TAB_ID) {
         EditDrawerTabDialog(
-            tab = editingTab,
-            canMoveLeft = customIdx > 0,
-            canMoveRight = customIdx in 0 until drawerTabs.lastIndex,
-            canHide = pages.size > 1,
-            allApps = allApps,
-            onSave = { newName, appKeys, isHidden ->
+            tabKey = DrawerTab.ALL_TAB_ID,
+            initialName = allTabName,
+            initialHidden = isAllTabHidden,
+            canHide = drawerTabs.any { !it.isHidden },
+            canDelete = false,
+            allowBlankName = true,
+            onSave = { newName, isHidden ->
+                if (newName != allTabName) {
+                    onSetAllTabName(newName)
+                }
+                if (isHidden != isAllTabHidden) {
+                    onSetAllTabHidden(isHidden)
+                }
+                editingTabId = null
+            },
+            onDismiss = { editingTabId = null },
+        )
+    } else if (editingTab != null) {
+        EditDrawerTabDialog(
+            tabKey = editingTab.id,
+            initialName = editingTab.name,
+            initialHidden = editingTab.isHidden,
+            canHide = normalPages.size > 1,
+            canDelete = true,
+            onSave = { newName, isHidden ->
                 if (newName != editingTab.name) {
                     onRenameTab(editingTab.id, newName)
                 }
-                onSetTabApps(editingTab.id, appKeys)
                 if (isHidden != editingTab.isHidden) {
                     onSetTabHidden(editingTab.id, isHidden)
                 }
                 editingTabId = null
             },
-            onMoveLeft = { onMoveTab(editingTab.id, -1) },
-            onMoveRight = { onMoveTab(editingTab.id, +1) },
             onDelete = {
                 editingTabId = null
                 onDeleteTab(editingTab.id)
@@ -586,9 +1054,15 @@ private fun DrawerAppsVerticalGrid(
     tabIndex: Int,
     isActive: Boolean,
     isCurrentPage: Boolean,
+    isEditMode: Boolean,
+    draggedAppKey: String?,
     onAppClick: (AppItem) -> Unit,
     appMenuHost: AppContextMenuHost,
     onAtTopChanged: (Boolean) -> Unit = {},
+    onAppDragStart: (AppItem, Offset) -> Unit = { _, _ -> },
+    onAppDragMove: (Offset) -> Unit = {},
+    onAppDragEnd: (Offset) -> Unit = {},
+    onAppDragCancel: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val iconSize = when {
@@ -615,26 +1089,45 @@ private fun DrawerAppsVerticalGrid(
             key = { it.componentKey },
             contentType = { "drawer_app" },
         ) { app ->
-            Box {
+            val isDraggingThis = isEditMode && draggedAppKey == app.componentKey
+            Box(
+                modifier = Modifier.alpha(if (isDraggingThis) 0.25f else 1f),
+            ) {
                 AppIconTile(
                     app = app,
                     boundDirections = persistentSetOf(),
                     showLabel = true,
                     onWallpaper = false,
                     iconSize = iconSize,
-                    onClick = { onAppClick(app) },
+                    onClick = {
+                        if (!isEditMode) {
+                            onAppClick(app)
+                        }
+                    },
                     onLongClick = {
-                        appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
+                        if (!isEditMode) {
+                            appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
+                        }
                     },
                     onSwipe = {},
+                    onDragStart = if (isEditMode) {
+                        { _, fingerRoot -> onAppDragStart(app, fingerRoot) }
+                    } else {
+                        null
+                    },
+                    onDragMove = if (isEditMode) onAppDragMove else null,
+                    onDragEnd = if (isEditMode) onAppDragEnd else null,
+                    onDragCancel = if (isEditMode) onAppDragCancel else null,
                 )
-                AppContextMenuDropdown(
-                    app = app,
-                    origin = AppActionOrigin.DRAWER,
-                    sourcePageIndex = tabIndex,
-                    expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
-                    host = appMenuHost,
-                )
+                if (!isEditMode) {
+                    AppContextMenuDropdown(
+                        app = app,
+                        origin = AppActionOrigin.DRAWER,
+                        sourcePageIndex = tabIndex,
+                        expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
+                        host = appMenuHost,
+                    )
+                }
             }
         }
     }

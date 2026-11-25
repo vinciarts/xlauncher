@@ -70,6 +70,10 @@
     <string name="home_gesture_group_app">Apps</string>
     <string name="settings_icon_shape_section">Icons</string>
     <string name="settings_home_show_labels">Show app labels</string>
+    <string name="settings_dock_count">Dock icons</string>
+    <string name="dock_count_option">%1$d icons</string>
+    <string name="dock_count_off">Off</string>
+    <string name="settings_drawer_auto_hide_empty_tabs">Auto-hide empty folders</string>
     <string name="settings_icon_shape">Icon shape</string>
     <string name="icon_shape_system">System</string>
     <string name="icon_shape_squircle">Squircle</string>
@@ -112,6 +116,11 @@
     <string name="settings_drawer_tabs">Tabs</string>
     <string name="settings_drawer_tabs_empty">No custom tabs yet. Create tabs to group apps in the drawer.</string>
     <string name="drawer_tab_all">All</string>
+    <string name="drawer_edit_mode_title">Editing drawer</string>
+    <string name="drawer_edit_mode_hint">Long-press apps to move, or tabs to reorder</string>
+    <string name="drawer_move_to_all">Move to All</string>
+    <string name="drawer_menu_edit_drawer">Edit drawer</string>
+    <string name="cd_drawer_menu">Drawer menu</string>
     <string name="drawer_tab_create_title">New tab</string>
     <string name="drawer_tab_edit_title">Edit tab</string>
     <string name="drawer_tab_name_label">Tab name</string>

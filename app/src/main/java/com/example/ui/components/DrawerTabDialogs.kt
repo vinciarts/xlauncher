@@ -48,27 +48,14 @@ import com.example.model.DrawerTab
 import com.example.search.PinyinSearchEngine
 
 /**
- * Native Material 3 Expressive dialog to create a new App Drawer tab and optionally pick initial apps.
+ * Native Material 3 Expressive dialog to create a new App Drawer folder tab.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CreateDrawerTabDialog(
-    allApps: List<AppItem>,
-    onConfirm: (name: String, appKeys: List<String>) -> Unit,
+    onConfirm: (name: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var tabName by remember { mutableStateOf("") }
-    var searchQuery by remember { mutableStateOf("") }
-    val selectedKeys = remember { mutableStateListOf<String>() }
-    val dialogSegmentedColors = ListItemDefaults.segmentedColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-    )
-
-    val filteredApps = remember(allApps, searchQuery) {
-        val q = searchQuery.trim()
-        if (q.isEmpty()) allApps
-        else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -76,83 +63,21 @@ fun CreateDrawerTabDialog(
             Text(text = stringResource(R.string.drawer_tab_create_title))
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = tabName,
-                    onValueChange = { tabName = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.drawer_tab_name_label)) },
-                    placeholder = { Text(stringResource(R.string.drawer_tab_name_placeholder)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("create_tab_name_input"),
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = stringResource(R.string.drawer_tab_pick_apps_label, selectedKeys.size),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                ExpressiveSearchField(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    placeholder = stringResource(R.string.search_apps_placeholder),
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                LazyColumn(
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalFadingEdge(listState),
-                ) {
-                    itemsIndexed(
-                        items = filteredApps,
-                        key = { _, app -> app.componentKey },
-                    ) { index, app ->
-                        val checked = app.componentKey in selectedKeys
-                        SegmentedListItem(
-                            checked = checked,
-                            onCheckedChange = { isChecked ->
-                                if (isChecked) {
-                                    if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
-                                } else {
-                                    selectedKeys.remove(app.componentKey)
-                                }
-                            },
-                            shapes = ListItemDefaults.segmentedShapes(index = index, count = filteredApps.size),
-                            colors = dialogSegmentedColors,
-                            leadingContent = {
-                                AppIconImage(app = app, size = 28.dp)
-                            },
-                            trailingContent = {
-                                Checkbox(checked = checked, onCheckedChange = null)
-                            },
-                            content = {
-                                Text(
-                                    text = app.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                        )
-                    }
-                }
-            }
+            OutlinedTextField(
+                value = tabName,
+                onValueChange = { tabName = it },
+                singleLine = true,
+                label = { Text(stringResource(R.string.drawer_tab_name_label)) },
+                placeholder = { Text(stringResource(R.string.drawer_tab_name_placeholder)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("create_tab_name_input"),
+            )
         },
         confirmButton = {
             TextButton(
                 enabled = tabName.isNotBlank(),
-                onClick = { onConfirm(tabName.trim(), selectedKeys.toList()) },
+                onClick = { onConfirm(tabName.trim()) },
                 modifier = Modifier.testTag("create_tab_confirm"),
             ) {
                 Text(stringResource(R.string.dialog_done))
@@ -167,42 +92,27 @@ fun CreateDrawerTabDialog(
 }
 
 /**
- * Native Material 3 Expressive dialog to rename, pick apps for, reorder, or delete a custom App Drawer tab.
+ * Native Material 3 Expressive dialog to rename, show/hide, or delete an App Drawer tab.
+ * Capabilities (delete, hide, blank-to-default name) are governed by the dialog itself.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun EditDrawerTabDialog(
-    tab: DrawerTab,
-    canMoveLeft: Boolean,
-    canMoveRight: Boolean,
+    tabKey: String,
+    initialName: String,
+    initialHidden: Boolean,
     canHide: Boolean,
-    allApps: List<AppItem>,
-    onSave: (newName: String, appKeys: Set<String>, isHidden: Boolean) -> Unit,
-    onMoveLeft: () -> Unit,
-    onMoveRight: () -> Unit,
-    onDelete: () -> Unit,
+    canDelete: Boolean,
+    allowBlankName: Boolean = false,
+    onSave: (newName: String, isHidden: Boolean) -> Unit,
+    onDelete: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
-    var tabName by remember(tab.id) { mutableStateOf(tab.name) }
-    var isHidden by remember(tab.id) { mutableStateOf(tab.isHidden) }
-    var searchQuery by remember(tab.id) { mutableStateOf("") }
-    val selectedKeys = remember(tab.id) {
-        mutableStateListOf<String>().apply { addAll(tab.appKeys) }
-    }
+    var tabName by remember(tabKey) { mutableStateOf(initialName) }
+    var isHidden by remember(tabKey) { mutableStateOf(initialHidden) }
     val dialogSegmentedColors = ListItemDefaults.segmentedColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     )
-
-    val filteredApps = remember(allApps, searchQuery, selectedKeys.size) {
-        val q = searchQuery.trim()
-        val matched = if (q.isEmpty()) allApps
-        else allApps.filter { PinyinSearchEngine.matches(q, it.label, it.packageName) }
-        if (q.isEmpty()) {
-            matched.sortedBy { if (it.componentKey in selectedKeys) 0 else 1 }
-        } else {
-            matched
-        }
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -215,31 +125,17 @@ fun EditDrawerTabDialog(
                     text = stringResource(R.string.drawer_tab_edit_title),
                     modifier = Modifier.weight(1f),
                 )
-                if (canMoveLeft) {
-                    IconButton(onClick = onMoveLeft) {
+                if (canDelete) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.testTag("edit_tab_delete"),
+                    ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_move_tab_left),
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = stringResource(R.string.drawer_tab_delete),
+                            tint = MaterialTheme.colorScheme.error,
                         )
                     }
-                }
-                if (canMoveRight) {
-                    IconButton(onClick = onMoveRight) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                            contentDescription = stringResource(R.string.cd_move_tab_right),
-                        )
-                    }
-                }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.testTag("edit_tab_delete"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = stringResource(R.string.drawer_tab_delete),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
                 }
             }
         },
@@ -250,6 +146,11 @@ fun EditDrawerTabDialog(
                     onValueChange = { tabName = it },
                     singleLine = true,
                     label = { Text(stringResource(R.string.drawer_tab_name_label)) },
+                    placeholder = if (allowBlankName) {
+                        { Text(stringResource(R.string.drawer_tab_all)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("edit_tab_name_input"),
@@ -258,8 +159,11 @@ fun EditDrawerTabDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 SegmentedListItem(
-                    checked = !isHidden,
-                    onCheckedChange = { visible -> isHidden = !visible },
+                    onClick = {
+                        if (isHidden || canHide) {
+                            isHidden = !isHidden
+                        }
+                    },
                     enabled = isHidden || canHide,
                     shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
                     colors = dialogSegmentedColors,
@@ -275,72 +179,12 @@ fun EditDrawerTabDialog(
                         Text(text = stringResource(R.string.drawer_tab_visible_toggle))
                     },
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = stringResource(R.string.drawer_tab_pick_apps_label, selectedKeys.size),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                ExpressiveSearchField(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    placeholder = stringResource(R.string.search_apps_placeholder),
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                LazyColumn(
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalFadingEdge(listState),
-                ) {
-                    itemsIndexed(
-                        items = filteredApps,
-                        key = { _, app -> app.componentKey },
-                    ) { index, app ->
-                        val checked = app.componentKey in selectedKeys
-                        SegmentedListItem(
-                            checked = checked,
-                            onCheckedChange = { isChecked ->
-                                if (isChecked) {
-                                    if (app.componentKey !in selectedKeys) selectedKeys.add(app.componentKey)
-                                } else {
-                                    selectedKeys.remove(app.componentKey)
-                                }
-                            },
-                            shapes = ListItemDefaults.segmentedShapes(index = index, count = filteredApps.size),
-                            colors = dialogSegmentedColors,
-                            leadingContent = {
-                                AppIconImage(app = app, size = 28.dp)
-                            },
-                            trailingContent = {
-                                Checkbox(checked = checked, onCheckedChange = null)
-                            },
-                            content = {
-                                Text(
-                                    text = app.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = tabName.isNotBlank(),
-                onClick = { onSave(tabName.trim(), selectedKeys.toSet(), isHidden) },
+                enabled = allowBlankName || tabName.isNotBlank(),
+                onClick = { onSave(tabName.trim(), isHidden) },
                 modifier = Modifier.testTag("edit_tab_confirm"),
             ) {
                 Text(stringResource(R.string.dialog_done))

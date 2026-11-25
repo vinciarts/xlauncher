@@ -82,10 +82,12 @@ fun SettingsScreen(
     onSetHomeShowAppLabels: (Boolean) -> Unit,
     onSetHomeGridColumns: (Int) -> Unit,
     onSetHomeGridRows: (Int) -> Unit,
+    onSetDockMaxItems: (Int) -> Unit,
     onSetIconShape: (com.example.model.IconShape) -> Unit,
     onSetHomeGesture: (SwipeDirection, HomeGestureAction) -> Unit,
     onSetHomeButtonAction: (HomeGestureAction) -> Unit,
     onSetDrawerColumns: (Int) -> Unit,
+    onSetAutoHideEmptyDrawerTabs: (Boolean) -> Unit,
     onCreateDrawerTab: (String, List<String>) -> Unit,
     onRenameDrawerTab: (String, String) -> Unit,
     onSetDrawerTabApps: (String, Set<String>) -> Unit,
@@ -253,10 +255,12 @@ fun SettingsScreen(
                             segmentedColors = segmentedColors,
                             onSetHomeGridColumns = onSetHomeGridColumns,
                             onSetHomeGridRows = onSetHomeGridRows,
+                            onSetDockMaxItems = onSetDockMaxItems,
                             onSetHomeLoopPaging = onSetHomeLoopPaging,
                             onSetHomeShowAppLabels = onSetHomeShowAppLabels,
                             onSetIconShape = onSetIconShape,
                             onSetDrawerColumns = onSetDrawerColumns,
+                            onSetAutoHideEmptyDrawerTabs = onSetAutoHideEmptyDrawerTabs,
                             onSetAllTabHidden = onSetAllTabHidden,
                             onSetDrawerTabHidden = onSetDrawerTabHidden,
                             onOpenCreateTabDialog = { showCreateTabDialog = true },
@@ -322,10 +326,9 @@ fun SettingsScreen(
 
     if (showCreateTabDialog) {
         CreateDrawerTabDialog(
-            allApps = uiState.allApps,
-            onConfirm = { name, appKeys ->
+            onConfirm = { name ->
                 showCreateTabDialog = false
-                onCreateDrawerTab(name, appKeys)
+                onCreateDrawerTab(name, emptyList())
             },
             onDismiss = { showCreateTabDialog = false },
         )
@@ -333,27 +336,23 @@ fun SettingsScreen(
 
     val editingTab = editingTabId?.let { id -> settings.drawerTabs.firstOrNull { it.id == id } }
     if (editingTab != null) {
-        val idx = settings.drawerTabs.indexOfFirst { it.id == editingTab.id }
         val visibleTabCount = (if (!settings.isAllTabHidden) 1 else 0) +
             settings.drawerTabs.count { !it.isHidden }
         EditDrawerTabDialog(
-            tab = editingTab,
-            canMoveLeft = idx > 0,
-            canMoveRight = idx in 0 until settings.drawerTabs.lastIndex,
+            tabKey = editingTab.id,
+            initialName = editingTab.name,
+            initialHidden = editingTab.isHidden,
             canHide = visibleTabCount > 1,
-            allApps = uiState.allApps,
-            onSave = { newName, appKeys, isHidden ->
+            canDelete = true,
+            onSave = { newName, isHidden ->
                 if (newName != editingTab.name) {
                     onRenameDrawerTab(editingTab.id, newName)
                 }
-                onSetDrawerTabApps(editingTab.id, appKeys)
                 if (isHidden != editingTab.isHidden) {
                     onSetDrawerTabHidden(editingTab.id, isHidden)
                 }
                 editingTabId = null
             },
-            onMoveLeft = { onMoveDrawerTab(editingTab.id, -1) },
-            onMoveRight = { onMoveDrawerTab(editingTab.id, +1) },
             onDelete = {
                 editingTabId = null
                 onDeleteDrawerTab(editingTab.id)

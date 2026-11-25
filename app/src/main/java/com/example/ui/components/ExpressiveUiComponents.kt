@@ -59,6 +59,7 @@ fun ExpressiveSearchField(
     focusRequester: FocusRequester? = null,
     inputTestTag: String? = null,
     onSearch: (String) -> Unit = {},
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val searchBarColors = SearchBarDefaults.colors()
     val inputModifier = Modifier
@@ -101,7 +102,7 @@ fun ExpressiveSearchField(
                     }
                 }
             } else {
-                null
+                trailingContent
             },
             colors = searchBarColors.inputFieldColors,
             modifier = inputModifier,

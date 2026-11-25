@@ -124,6 +124,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val HOME_APPS_GRID = PrefKeys.HOME_APPS_GRID
         val PLACED_WIDGETS = stringPreferencesKey("placed_widgets")
         val DOCK_KEYS = stringPreferencesKey("dock_keys")
+        val DOCK_MAX_ITEMS = intPreferencesKey("dock_max_items")
         val DOCK_GESTURES = stringPreferencesKey("dock_gestures")
         val HOME_GESTURE_UP = stringPreferencesKey("home_gesture_up")
         val HOME_GESTURE_DOWN = stringPreferencesKey("home_gesture_down")
@@ -134,6 +135,8 @@ class LauncherPreferencesRepository(private val context: Context) {
         val ICON_SHAPE = stringPreferencesKey("icon_shape")
         val DRAWER_TABS = stringPreferencesKey("drawer_tabs")
         val ALL_TAB_HIDDEN = booleanPreferencesKey("drawer_all_tab_hidden")
+        val ALL_TAB_NAME = stringPreferencesKey("drawer_all_tab_name")
+        val AUTO_HIDE_EMPTY_DRAWER_TABS = booleanPreferencesKey("drawer_auto_hide_empty_tabs")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
         val SEARCH_SHORTCUTS_ENABLED = booleanPreferencesKey("search_shortcuts_enabled")
         val SEARCH_CONTACTS_ENABLED = booleanPreferencesKey("search_contacts_enabled")
@@ -151,6 +154,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             homeLoopPaging = prefs[Keys.HOME_LOOP_PAGING] ?: true,
             homeGridColumns = readGridColumns(prefs),
             homeGridRows = readGridRows(prefs),
+            dockMaxItems = readDockMaxItems(prefs),
             placedHomeApps = gridApps.toImmutableList(),
             placedWidgets = decodePlacedWidgets(prefs[Keys.PLACED_WIDGETS]).toImmutableList(),
             dockKeys = decodeList(prefs[Keys.DOCK_KEYS]).take(MAX_DOCK_ITEMS).toImmutableList(),
@@ -173,6 +177,8 @@ class LauncherPreferencesRepository(private val context: Context) {
             homeShowAppLabels = prefs[Keys.HOME_SHOW_APP_LABELS] ?: true,
             drawerTabs = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toImmutableList(),
             isAllTabHidden = prefs[Keys.ALL_TAB_HIDDEN] ?: false,
+            allTabName = prefs[Keys.ALL_TAB_NAME]?.trim() ?: "",
+            autoHideEmptyDrawerTabs = prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] ?: false,
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
             searchShortcutsEnabled = prefs[Keys.SEARCH_SHORTCUTS_ENABLED] ?: false,
             searchContactsEnabled = prefs[Keys.SEARCH_CONTACTS_ENABLED] ?: false,
@@ -194,6 +200,16 @@ class LauncherPreferencesRepository(private val context: Context) {
     private fun readGridRows(prefs: Preferences): Int =
         (prefs[Keys.HOME_GRID_ROWS] ?: HomeGridEngine.DEFAULT_HOME_GRID_ROWS)
             .coerceIn(HomeGridEngine.MIN_HOME_GRID_ROWS, HomeGridEngine.MAX_HOME_GRID_ROWS)
+
+    private fun readDockMaxItems(prefs: Preferences): Int =
+        (prefs[Keys.DOCK_MAX_ITEMS] ?: DEFAULT_DOCK_ITEMS)
+            .coerceIn(MIN_DOCK_ITEMS, MAX_DOCK_ITEMS)
+
+    suspend fun setDockMaxItems(count: Int) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.DOCK_MAX_ITEMS] = count.coerceIn(MIN_DOCK_ITEMS, MAX_DOCK_ITEMS)
+        }
+    }
 
     private fun normalizeAllPages(
         widgets: List<PlacedWidget>,
@@ -673,11 +689,12 @@ class LauncherPreferencesRepository(private val context: Context) {
     suspend fun togglePinDock(componentKey: String): Boolean {
         var success = true
         context.launcherDataStore.edit { prefs ->
+            val limit = readDockMaxItems(prefs)
             val current = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
             if (current.contains(componentKey)) {
                 current.remove(componentKey)
             } else {
-                if (current.size >= MAX_DOCK_ITEMS) {
+                if (limit <= 0 || current.size >= limit) {
                     success = false
                     return@edit
                 }
@@ -840,6 +857,8 @@ class LauncherPreferencesRepository(private val context: Context) {
             val currentDock = decodeList(prefs[Keys.DOCK_KEYS]).toMutableList()
             val updatedApps = normA.filterNot { it.pageIndex == fromPage && it.componentKey == componentKey }.toMutableList()
 
+            val dockLimit = readDockMaxItems(prefs)
+            if (dockLimit <= 0) return@edit
             val existingIdx = currentDock.indexOf(componentKey)
             when {
                 existingIdx >= 0 -> {
@@ -847,12 +866,12 @@ class LauncherPreferencesRepository(private val context: Context) {
                     currentDock.add(targetDockIndex.coerceIn(0, currentDock.size), componentKey)
                 }
 
-                currentDock.size < MAX_DOCK_ITEMS -> {
+                currentDock.size < dockLimit -> {
                     currentDock.add(targetDockIndex.coerceIn(0, currentDock.size), componentKey)
                 }
 
                 else -> {
-                    val swapIdx = targetDockIndex.coerceIn(0, currentDock.lastIndex)
+                    val swapIdx = targetDockIndex.coerceIn(0, (currentDock.lastIndex).coerceAtLeast(0))
                     val displacedKey = currentDock[swapIdx]
                     currentDock[swapIdx] = componentKey
                     val dupOnFrom = updatedApps.any { it.pageIndex == fromPage && it.componentKey == displacedKey }
@@ -927,11 +946,16 @@ class LauncherPreferencesRepository(private val context: Context) {
         if (trimmed.isEmpty()) return null
         var createdId: String? = null
         context.launcherDataStore.edit { prefs ->
-            val current = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).toMutableList()
+            val current = decodeDrawerTabs(prefs[Keys.DRAWER_TABS])
             if (current.size >= MAX_DRAWER_TABS) return@edit
+            val assigned = appKeys.distinct().toSet()
+            val cleaned = current.map { tab ->
+                if (assigned.isEmpty()) tab
+                else tab.copy(appKeys = tab.appKeys.filterNot { it in assigned }.toImmutableList())
+            }.toMutableList()
             val id = "tab_${UUID.randomUUID().toString().take(8)}"
-            current.add(DrawerTab(id = id, name = trimmed, appKeys = appKeys.distinct().toImmutableList()))
-            prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(current)
+            cleaned.add(DrawerTab(id = id, name = trimmed, appKeys = appKeys.distinct().toImmutableList()))
+            prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(cleaned)
             createdId = id
         }
         return createdId
@@ -951,17 +975,37 @@ class LauncherPreferencesRepository(private val context: Context) {
     suspend fun setDrawerTabApps(tabId: String, appKeys: Set<String>) {
         context.launcherDataStore.edit { prefs ->
             val updated = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).map { tab ->
-                if (tab.id == tabId) tab.copy(appKeys = appKeys.toImmutableList()) else tab
+                if (tab.id == tabId) {
+                    tab.copy(appKeys = appKeys.toImmutableList())
+                } else {
+                    tab.copy(appKeys = tab.appKeys.filterNot { it in appKeys }.toImmutableList())
+                }
             }
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
         }
     }
 
     suspend fun setAppDrawerTabs(componentKey: String, selectedTabIds: Set<String>) {
+        val chosenTabId = selectedTabIds.firstOrNull()
         context.launcherDataStore.edit { prefs ->
             val updated = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).map { tab ->
                 val list = tab.appKeys.toMutableList()
-                if (tab.id in selectedTabIds) {
+                if (tab.id == chosenTabId) {
+                    if (!list.contains(componentKey)) list.add(componentKey)
+                } else {
+                    list.remove(componentKey)
+                }
+                tab.copy(appKeys = list.toImmutableList())
+            }
+            prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(updated)
+        }
+    }
+
+    suspend fun moveAppToDrawerTab(componentKey: String, targetTabId: String) {
+        context.launcherDataStore.edit { prefs ->
+            val updated = decodeDrawerTabs(prefs[Keys.DRAWER_TABS]).map { tab ->
+                val list = tab.appKeys.toMutableList()
+                if (targetTabId != DrawerTab.ALL_TAB_ID && tab.id == targetTabId) {
                     if (!list.contains(componentKey)) list.add(componentKey)
                 } else {
                     list.remove(componentKey)
@@ -999,6 +1043,18 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.ALL_TAB_HIDDEN] = hidden
         }
         return applied
+    }
+
+    suspend fun setAllTabName(name: String) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.ALL_TAB_NAME] = name.trim()
+        }
+    }
+
+    suspend fun setAutoHideEmptyDrawerTabs(enabled: Boolean) {
+        context.launcherDataStore.edit { prefs ->
+            prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] = enabled
+        }
     }
 
     suspend fun setDrawerTabHidden(tabId: String, hidden: Boolean): Boolean {
@@ -1335,6 +1391,7 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.HOME_APPS_GRID] = encodePlacedHomeApps(restored.placedHomeApps)
 
             prefs[Keys.DOCK_KEYS] = encodeList(restored.dockKeys)
+            prefs[Keys.DOCK_MAX_ITEMS] = restored.dockMaxItems
             prefs[Keys.DOCK_GESTURES] = encodeAppGestures(restored.appGestures)
 
             prefs[Keys.HOME_GESTURE_UP] = (restored.homeGestures[SwipeDirection.UP] ?: HomeGestureAction.None).encode()
@@ -1347,6 +1404,8 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.ICON_SHAPE] = restored.iconShape.id
             prefs[Keys.DRAWER_TABS] = encodeDrawerTabs(restored.drawerTabs)
             prefs[Keys.ALL_TAB_HIDDEN] = restored.isAllTabHidden
+            prefs[Keys.ALL_TAB_NAME] = restored.allTabName
+            prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] = restored.autoHideEmptyDrawerTabs
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true
 
             prefs[Keys.SEARCH_SHORTCUTS_ENABLED] = restored.searchShortcutsEnabled
@@ -1490,7 +1549,9 @@ class LauncherPreferencesRepository(private val context: Context) {
     }
 
     companion object {
-        const val MAX_DOCK_ITEMS = 5
+        const val MIN_DOCK_ITEMS = 0
+        const val DEFAULT_DOCK_ITEMS = 5
+        const val MAX_DOCK_ITEMS = 8
         const val MAX_HOME_PAGES = 7
         const val MAX_DRAWER_TABS = 12
         private const val PAGE_SEP = ";"
