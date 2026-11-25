@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -37,8 +38,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.DropdownMenuPopup
@@ -117,6 +120,7 @@ import com.example.ui.components.ExpressiveMenuItemSpec
 import com.example.ui.components.ExpressiveSearchField
 import com.example.ui.components.verticalFadingEdge
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toImmutableList
@@ -135,6 +139,7 @@ fun AppDrawerScreen(
     drawerTabPages: ImmutableList<DrawerTabPage>,
     isAllTabHidden: Boolean = false,
     allTabName: String = "",
+    foldedAppKeys: ImmutableSet<String> = persistentSetOf(),
     filteredDrawerApps: ImmutableList<AppItem>,
     hasAnyExtraSearchEnabled: Boolean,
     matchedShortcuts: ImmutableList<AppShortcutItem>,
@@ -169,6 +174,7 @@ fun AppDrawerScreen(
     onSetAllTabName: (String) -> Unit = {},
     onDeleteTab: (String) -> Unit,
     onMoveAppToTab: (String, String) -> Unit = { _, _ -> },
+    onToggleAppFolded: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -727,6 +733,7 @@ fun AppDrawerScreen(
                         } else {
                             DrawerAppsVerticalGrid(
                                 apps = tabPage.apps,
+                                foldedAppKeys = foldedAppKeys,
                                 cols = drawerColumns,
                                 tabIndex = realPage,
                                 isActive = isActive,
@@ -734,6 +741,7 @@ fun AppDrawerScreen(
                                 isEditMode = isEditMode,
                                 draggedAppKey = draggedApp?.componentKey,
                                 onAppClick = onAppClick,
+                                onToggleAppFolded = onToggleAppFolded,
                                 appMenuHost = appMenuHost,
                                 onAtTopChanged = { atTop -> pageAtTopMap[realPage] = atTop },
                                 onAppDragStart = { app, fingerRoot ->
@@ -1050,6 +1058,7 @@ fun AppDrawerScreen(
 @Composable
 private fun DrawerAppsVerticalGrid(
     apps: ImmutableList<AppItem>,
+    foldedAppKeys: ImmutableSet<String>,
     cols: Int,
     tabIndex: Int,
     isActive: Boolean,
@@ -1057,6 +1066,7 @@ private fun DrawerAppsVerticalGrid(
     isEditMode: Boolean,
     draggedAppKey: String?,
     onAppClick: (AppItem) -> Unit,
+    onToggleAppFolded: (String) -> Unit,
     appMenuHost: AppContextMenuHost,
     onAtTopChanged: (Boolean) -> Unit = {},
     onAppDragStart: (AppItem, Offset) -> Unit = { _, _ -> },
@@ -1071,6 +1081,14 @@ private fun DrawerAppsVerticalGrid(
         cols == 5 -> 48.dp
         else -> 52.dp
     }
+    val primaryApps = remember(apps, foldedAppKeys) {
+        apps.filterNot { it.componentKey in foldedAppKeys }
+    }
+    val foldedApps = remember(apps, foldedAppKeys) {
+        apps.filter { it.componentKey in foldedAppKeys }
+    }
+    var isFoldedExpanded by remember(tabIndex) { mutableStateOf(false) }
+
     val gridState = rememberLazyGridState()
     LaunchedEffect(gridState) {
         snapshotFlow { !gridState.canScrollBackward }
@@ -1084,42 +1102,60 @@ private fun DrawerAppsVerticalGrid(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier.verticalFadingEdge(gridState),
     ) {
-        items(
-            items = apps,
-            key = { it.componentKey },
-            contentType = { "drawer_app" },
-        ) { app ->
-            val isDraggingThis = isEditMode && draggedAppKey == app.componentKey
-            Box(
-                modifier = Modifier.alpha(if (isDraggingThis) 0.25f else 1f),
-            ) {
-                AppIconTile(
-                    app = app,
-                    boundDirections = persistentSetOf(),
-                    showLabel = true,
-                    onWallpaper = false,
-                    iconSize = iconSize,
-                    onClick = {
-                        if (!isEditMode) {
-                            onAppClick(app)
+        if (isEditMode) {
+            // In Edit Mode, keep all apps stably in place (zero jumping) and mark folded ones semi-transparent.
+            items(
+                items = apps,
+                key = { it.componentKey },
+                contentType = { "drawer_app_edit" },
+            ) { app ->
+                val isDraggingThis = draggedAppKey == app.componentKey
+                val isFolded = app.componentKey in foldedAppKeys
+                Box(
+                    modifier = Modifier.alpha(
+                        when {
+                            isDraggingThis -> 0.25f
+                            isFolded -> 0.38f
+                            else -> 1f
                         }
-                    },
-                    onLongClick = {
-                        if (!isEditMode) {
+                    ),
+                ) {
+                    AppIconTile(
+                        app = app,
+                        boundDirections = persistentSetOf(),
+                        showLabel = true,
+                        onWallpaper = false,
+                        iconSize = iconSize,
+                        onClick = { onToggleAppFolded(app.componentKey) },
+                        onLongClick = {},
+                        onSwipe = {},
+                        onDragStart = { _, fingerRoot -> onAppDragStart(app, fingerRoot) },
+                        onDragMove = onAppDragMove,
+                        onDragEnd = onAppDragEnd,
+                        onDragCancel = onAppDragCancel,
+                    )
+                }
+            }
+        } else {
+            // Normal Mode: Section 1 (Expanded / primary apps)
+            items(
+                items = primaryApps,
+                key = { it.componentKey },
+                contentType = { "drawer_app" },
+            ) { app ->
+                Box {
+                    AppIconTile(
+                        app = app,
+                        boundDirections = persistentSetOf(),
+                        showLabel = true,
+                        onWallpaper = false,
+                        iconSize = iconSize,
+                        onClick = { onAppClick(app) },
+                        onLongClick = {
                             appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
-                        }
-                    },
-                    onSwipe = {},
-                    onDragStart = if (isEditMode) {
-                        { _, fingerRoot -> onAppDragStart(app, fingerRoot) }
-                    } else {
-                        null
-                    },
-                    onDragMove = if (isEditMode) onAppDragMove else null,
-                    onDragEnd = if (isEditMode) onAppDragEnd else null,
-                    onDragCancel = if (isEditMode) onAppDragCancel else null,
-                )
-                if (!isEditMode) {
+                        },
+                        onSwipe = {},
+                    )
                     AppContextMenuDropdown(
                         app = app,
                         origin = AppActionOrigin.DRAWER,
@@ -1127,6 +1163,81 @@ private fun DrawerAppsVerticalGrid(
                         expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
                         host = appMenuHost,
                     )
+                }
+            }
+
+            // Normal Mode: Section 2 (Independent Folded section below separator header)
+            if (foldedApps.isNotEmpty()) {
+                item(
+                    key = "drawer_folded_header_$tabIndex",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "drawer_folded_header",
+                ) {
+                    Surface(
+                        onClick = { isFoldedExpanded = !isFoldedExpanded },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = if (primaryApps.isNotEmpty()) 8.dp else 0.dp, bottom = 2.dp)
+                            .testTag("drawer_folded_header"),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (isFoldedExpanded) {
+                                    Icons.Rounded.ExpandMore
+                                } else {
+                                    Icons.AutoMirrored.Rounded.KeyboardArrowRight
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.drawer_folded_section, foldedApps.size),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (isFoldedExpanded) {
+                    items(
+                        items = foldedApps,
+                        key = { "folded_${it.componentKey}" },
+                        contentType = { "drawer_folded_app" },
+                    ) { app ->
+                        Box(
+                            modifier = Modifier.alpha(0.78f),
+                        ) {
+                            AppIconTile(
+                                app = app,
+                                boundDirections = persistentSetOf(),
+                                showLabel = true,
+                                onWallpaper = false,
+                                iconSize = iconSize,
+                                onClick = { onAppClick(app) },
+                                onLongClick = {
+                                    appMenuHost.onOpen(app, AppActionOrigin.DRAWER, tabIndex)
+                                },
+                                onSwipe = {},
+                            )
+                            AppContextMenuDropdown(
+                                app = app,
+                                origin = AppActionOrigin.DRAWER,
+                                sourcePageIndex = tabIndex,
+                                expanded = isCurrentPage && appMenuHost.isExpandedFor(app, AppActionOrigin.DRAWER, tabIndex),
+                                host = appMenuHost,
+                            )
+                        }
+                    }
                 }
             }
         }

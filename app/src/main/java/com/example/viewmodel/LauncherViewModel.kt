@@ -1176,6 +1176,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun toggleDrawerAppFolded(componentKey: String) {
+        emitActionHaptic()
+        viewModelScope.launch {
+            prefsRepository.toggleDrawerAppFolded(componentKey)
+        }
+    }
+
     fun setDrawerTabHidden(tabId: String, hidden: Boolean) {
         viewModelScope.launch {
             val ok = prefsRepository.setDrawerTabHidden(tabId, hidden)

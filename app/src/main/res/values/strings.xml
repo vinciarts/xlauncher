@@ -117,7 +117,8 @@
     <string name="settings_drawer_tabs_empty">No custom tabs yet. Create tabs to group apps in the drawer.</string>
     <string name="drawer_tab_all">All</string>
     <string name="drawer_edit_mode_title">Editing drawer</string>
-    <string name="drawer_edit_mode_hint">Long-press apps to move, or tabs to reorder</string>
+    <string name="drawer_edit_mode_hint">Tap apps to fold, long-press to move</string>
+    <string name="drawer_folded_section">Folded · %1$d</string>
     <string name="drawer_move_to_all">Move to All</string>
     <string name="drawer_menu_edit_drawer">Edit drawer</string>
     <string name="cd_drawer_menu">Drawer menu</string>

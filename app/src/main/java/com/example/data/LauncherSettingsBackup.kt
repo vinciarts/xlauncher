@@ -37,6 +37,7 @@ data class RestoredLauncherSettings(
     val isAllTabHidden: Boolean,
     val allTabName: String,
     val autoHideEmptyDrawerTabs: Boolean,
+    val foldedDrawerAppKeys: List<String>,
     val searchShortcutsEnabled: Boolean,
     val searchContactsEnabled: Boolean,
     val searchThirdPartyAppsEnabled: Boolean,
@@ -112,6 +113,9 @@ object LauncherSettingsBackup {
         root.put("isAllTabHidden", settings.isAllTabHidden)
         root.put("allTabName", settings.allTabName)
         root.put("autoHideEmptyDrawerTabs", settings.autoHideEmptyDrawerTabs)
+        val foldedArr = JSONArray()
+        settings.foldedDrawerAppKeys.forEach { foldedArr.put(it) }
+        root.put("foldedDrawerAppKeys", foldedArr)
 
         val tabsArr = JSONArray()
         for (tab in settings.drawerTabs) {
@@ -275,6 +279,16 @@ object LauncherSettingsBackup {
         val isAllTabHidden = rawAllHidden && hasVisibleCustomTab
         val allTabName = root.optString("allTabName", "").trim()
         val autoHideEmptyDrawerTabs = root.optBoolean("autoHideEmptyDrawerTabs", false)
+        val foldedDrawerAppKeys = mutableListOf<String>()
+        val foldedArr = root.optJSONArray("foldedDrawerAppKeys")
+        if (foldedArr != null) {
+            for (i in 0 until foldedArr.length()) {
+                val key = foldedArr.optString(i, "").trim()
+                if (key.isNotEmpty() && key !in foldedDrawerAppKeys) {
+                    foldedDrawerAppKeys.add(key)
+                }
+            }
+        }
 
         val searchShortcutsEnabled = root.optBoolean("searchShortcutsEnabled", false)
         val searchContactsEnabled = root.optBoolean("searchContactsEnabled", false)
@@ -310,6 +324,7 @@ object LauncherSettingsBackup {
             isAllTabHidden = isAllTabHidden,
             allTabName = allTabName,
             autoHideEmptyDrawerTabs = autoHideEmptyDrawerTabs,
+            foldedDrawerAppKeys = foldedDrawerAppKeys,
             searchShortcutsEnabled = searchShortcutsEnabled,
             searchContactsEnabled = searchContactsEnabled,
             searchThirdPartyAppsEnabled = searchThirdPartyAppsEnabled,

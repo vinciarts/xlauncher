@@ -117,7 +117,8 @@
     <string name="settings_drawer_tabs_empty">暂无自定义标签页，可新建标签页对应用分组</string>
     <string name="drawer_tab_all">全部</string>
     <string name="drawer_edit_mode_title">正在编辑抽屉</string>
-    <string name="drawer_edit_mode_hint">长按应用移动到标签页，长按标签页排序</string>
+    <string name="drawer_edit_mode_hint">轻点应用折叠，长按拖动移动或排序</string>
+    <string name="drawer_folded_section">已折叠 · %1$d</string>
     <string name="drawer_move_to_all">移回「全部」</string>
     <string name="drawer_menu_edit_drawer">编辑抽屉</string>
     <string name="cd_drawer_menu">抽屉菜单</string>

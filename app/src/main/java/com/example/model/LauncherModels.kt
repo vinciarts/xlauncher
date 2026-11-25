@@ -8,8 +8,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 
 enum class SwipeDirection {
     UP,
@@ -372,6 +374,7 @@ data class LauncherSettings(
     val isAllTabHidden: Boolean = false,
     val allTabName: String = "",
     val autoHideEmptyDrawerTabs: Boolean = false,
+    val foldedDrawerAppKeys: ImmutableSet<String> = persistentSetOf(),
     val hasSeededDefaults: Boolean = false,
     // Opt-in Universal Search sources (local sources off by default; web search enabled by default)
     val searchShortcutsEnabled: Boolean = false,

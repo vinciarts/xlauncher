@@ -520,6 +520,7 @@ private fun LauncherRoot(
                     drawerTabPages = uiState.drawerTabPages,
                     isAllTabHidden = uiState.settings.isAllTabHidden,
                     allTabName = uiState.settings.allTabName,
+                    foldedAppKeys = uiState.settings.foldedDrawerAppKeys,
                     filteredDrawerApps = uiState.filteredDrawerApps,
                     hasAnyExtraSearchEnabled = uiState.settings.hasAnyExtraSearchEnabled,
                     matchedShortcuts = uiState.matchedShortcuts,
@@ -554,6 +555,7 @@ private fun LauncherRoot(
                     onSetAllTabName = viewModel::setAllTabName,
                     onDeleteTab = viewModel::deleteDrawerTab,
                     onMoveAppToTab = viewModel::moveAppToDrawerTab,
+                    onToggleAppFolded = viewModel::toggleDrawerAppFolded,
                     onOpenSettings = viewModel::openSettings,
                 )
             }
