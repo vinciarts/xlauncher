@@ -38,10 +38,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.DropdownMenuPopup
@@ -1090,7 +1088,7 @@ private fun DrawerAppsVerticalGrid(
     val foldedApps = remember(apps, foldedAppKeys) {
         apps.filter { it.componentKey in foldedAppKeys }
     }
-    var isFoldedExpanded by remember(tabIndex) { mutableStateOf(false) }
+    var isMoreExpanded by remember(tabIndex) { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
     LaunchedEffect(gridState) {
@@ -1109,7 +1107,7 @@ private fun DrawerAppsVerticalGrid(
         modifier = modifier.verticalFadingEdge(gridState),
     ) {
         if (isEditMode) {
-            // In Edit Mode, keep all apps stably in place (zero jumping) and mark folded ones semi-transparent.
+            // In Edit Mode, keep all apps stably in place (zero jumping) and mark secondary ones semi-transparent.
             items(
                 items = apps,
                 key = { it.componentKey },
@@ -1143,15 +1141,15 @@ private fun DrawerAppsVerticalGrid(
                 }
             }
         } else if (bottomAligned) {
-            // Bottom-aligned Normal Mode: Folded zone ABOVE, separator bar in middle, Primary zone anchored at bottom.
+            // Bottom-aligned Normal Mode: Secondary ("More") zone ABOVE, Primary zone anchored at bottom.
             if (foldedApps.isNotEmpty()) {
-                if (isFoldedExpanded) {
+                if (isMoreExpanded) {
                     items(
                         items = foldedApps,
                         key = { "folded_${it.componentKey}" },
                         contentType = { "drawer_folded_app" },
                     ) { app ->
-                        Box(modifier = Modifier.alpha(0.78f)) {
+                        Box(modifier = Modifier.alpha(0.72f)) {
                             AppIconTile(
                                 app = app,
                                 boundDirections = persistentSetOf(),
@@ -1171,45 +1169,29 @@ private fun DrawerAppsVerticalGrid(
                             )
                         }
                     }
-                }
-
-                item(
-                    key = "drawer_folded_header_$tabIndex",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "drawer_folded_header",
-                ) {
-                    Surface(
-                        onClick = { isFoldedExpanded = !isFoldedExpanded },
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp, bottom = if (primaryApps.isNotEmpty()) 8.dp else 0.dp)
-                            .testTag("drawer_folded_header"),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                    if (primaryApps.isNotEmpty()) {
+                        item(
+                            key = "drawer_more_gap_$tabIndex",
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = "drawer_more_gap",
                         ) {
-                            Icon(
-                                imageVector = if (isFoldedExpanded) {
-                                    Icons.Rounded.ExpandMore
-                                } else {
-                                    Icons.AutoMirrored.Rounded.KeyboardArrowRight
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.drawer_folded_section, foldedApps.size),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Spacer(modifier = Modifier.height(10.dp))
                         }
+                    }
+                } else {
+                    item(
+                        key = "drawer_show_more_$tabIndex",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "drawer_show_more",
+                    ) {
+                        DrawerShowMoreButton(
+                            count = foldedApps.size,
+                            onClick = { isMoreExpanded = true },
+                            modifier = Modifier.padding(
+                                top = 2.dp,
+                                bottom = if (primaryApps.isNotEmpty()) 8.dp else 0.dp,
+                            ),
+                        )
                     }
                 }
             }
@@ -1240,7 +1222,7 @@ private fun DrawerAppsVerticalGrid(
                 }
             }
         } else {
-            // Top-aligned Normal Mode: Primary zone ABOVE, separator bar in middle, Folded zone BELOW.
+            // Top-aligned Normal Mode: Primary zone ABOVE, Secondary ("More") zone BELOW.
             items(
                 items = primaryApps,
                 key = { it.componentKey },
@@ -1268,53 +1250,22 @@ private fun DrawerAppsVerticalGrid(
             }
 
             if (foldedApps.isNotEmpty()) {
-                item(
-                    key = "drawer_folded_header_$tabIndex",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "drawer_folded_header",
-                ) {
-                    Surface(
-                        onClick = { isFoldedExpanded = !isFoldedExpanded },
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = if (primaryApps.isNotEmpty()) 8.dp else 0.dp, bottom = 2.dp)
-                            .testTag("drawer_folded_header"),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                if (isMoreExpanded) {
+                    if (primaryApps.isNotEmpty()) {
+                        item(
+                            key = "drawer_more_gap_$tabIndex",
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = "drawer_more_gap",
                         ) {
-                            Icon(
-                                imageVector = if (isFoldedExpanded) {
-                                    Icons.Rounded.ExpandMore
-                                } else {
-                                    Icons.AutoMirrored.Rounded.KeyboardArrowRight
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.drawer_folded_section, foldedApps.size),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Spacer(modifier = Modifier.height(10.dp))
                         }
                     }
-                }
-
-                if (isFoldedExpanded) {
                     items(
                         items = foldedApps,
                         key = { "folded_${it.componentKey}" },
                         contentType = { "drawer_folded_app" },
                     ) { app ->
-                        Box(modifier = Modifier.alpha(0.78f)) {
+                        Box(modifier = Modifier.alpha(0.72f)) {
                             AppIconTile(
                                 app = app,
                                 boundDirections = persistentSetOf(),
@@ -1334,8 +1285,49 @@ private fun DrawerAppsVerticalGrid(
                             )
                         }
                     }
+                } else {
+                    item(
+                        key = "drawer_show_more_$tabIndex",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "drawer_show_more",
+                    ) {
+                        DrawerShowMoreButton(
+                            count = foldedApps.size,
+                            onClick = { isMoreExpanded = true },
+                            modifier = Modifier.padding(
+                                top = if (primaryApps.isNotEmpty()) 8.dp else 0.dp,
+                                bottom = 2.dp,
+                            ),
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DrawerShowMoreButton(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.testTag("drawer_show_more_button"),
+        ) {
+            Text(
+                text = stringResource(R.string.drawer_show_more, count),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+            )
         }
     }
 }
