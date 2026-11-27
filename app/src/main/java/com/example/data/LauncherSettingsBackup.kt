@@ -39,6 +39,7 @@ data class RestoredLauncherSettings(
     val autoHideEmptyDrawerTabs: Boolean,
     val drawerBottomAligned: Boolean,
     val foldedDrawerAppKeys: List<String>,
+    val drawerMenuActions: List<HomeGestureAction>,
     val searchShortcutsEnabled: Boolean,
     val searchContactsEnabled: Boolean,
     val searchThirdPartyAppsEnabled: Boolean,
@@ -118,6 +119,12 @@ object LauncherSettingsBackup {
         val foldedArr = JSONArray()
         settings.foldedDrawerAppKeys.forEach { foldedArr.put(it) }
         root.put("foldedDrawerAppKeys", foldedArr)
+
+        val menuActionsArr = JSONArray()
+        settings.drawerMenuActions
+            .filter { it != HomeGestureAction.None }
+            .forEach { menuActionsArr.put(it.encode()) }
+        root.put("drawerMenuActions", menuActionsArr)
 
         val tabsArr = JSONArray()
         for (tab in settings.drawerTabs) {
@@ -293,6 +300,22 @@ object LauncherSettingsBackup {
             }
         }
 
+        val drawerMenuActions = mutableListOf<HomeGestureAction>()
+        val seenMenuActions = mutableSetOf<String>()
+        val menuActionsArr = root.optJSONArray("drawerMenuActions")
+        if (menuActionsArr != null) {
+            for (i in 0 until menuActionsArr.length()) {
+                if (drawerMenuActions.size >= LauncherPreferencesRepository.MAX_DRAWER_MENU_ACTIONS) break
+                val raw = menuActionsArr.optString(i, "").trim()
+                if (raw.isEmpty()) continue
+                val action = HomeGestureAction.decode(raw)
+                val encoded = action.encode()
+                if (action != HomeGestureAction.None && seenMenuActions.add(encoded)) {
+                    drawerMenuActions.add(action)
+                }
+            }
+        }
+
         val searchShortcutsEnabled = root.optBoolean("searchShortcutsEnabled", false)
         val searchContactsEnabled = root.optBoolean("searchContactsEnabled", false)
         val legacyThirdPartyArr = root.optJSONArray("searchThirdPartyPackages")
@@ -329,6 +352,7 @@ object LauncherSettingsBackup {
             autoHideEmptyDrawerTabs = autoHideEmptyDrawerTabs,
             drawerBottomAligned = drawerBottomAligned,
             foldedDrawerAppKeys = foldedDrawerAppKeys,
+            drawerMenuActions = drawerMenuActions,
             searchShortcutsEnabled = searchShortcutsEnabled,
             searchContactsEnabled = searchContactsEnabled,
             searchThirdPartyAppsEnabled = searchThirdPartyAppsEnabled,

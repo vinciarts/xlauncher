@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +40,8 @@ import com.example.model.HomeGridEngine
 import com.example.model.IconShape
 import com.example.model.LauncherUiState
 import com.example.ui.components.ExpressiveSectionHeader
+import com.example.ui.components.HomeGestureActionIcon
+import com.example.ui.components.homeGestureActionLabel
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal fun LazyListScope.layoutSettingsItems(
@@ -50,6 +56,9 @@ internal fun LazyListScope.layoutSettingsItems(
     onSetDrawerColumns: (Int) -> Unit,
     onSetDrawerBottomAligned: (Boolean) -> Unit,
     onSetAutoHideEmptyDrawerTabs: (Boolean) -> Unit,
+    onAddDrawerMenuActionClick: () -> Unit,
+    onRemoveDrawerMenuAction: (Int) -> Unit,
+    onMoveDrawerMenuAction: (Int, Int) -> Unit,
     onSetAllTabHidden: (Boolean) -> Unit,
     onSetDrawerTabHidden: (String, Boolean) -> Unit,
     onOpenCreateTabDialog: () -> Unit,
@@ -266,6 +275,113 @@ internal fun LazyListScope.layoutSettingsItems(
                         Text(text = stringResource(R.string.settings_drawer_auto_hide_empty_tabs))
                     },
                 )
+            }
+        }
+    }
+
+    // Drawer Custom Menu Actions Section
+    item(key = "drawer_menu_actions_section") {
+        val actions = settings.drawerMenuActions
+        val canAddMore = actions.size < LauncherPreferencesRepository.MAX_DRAWER_MENU_ACTIONS
+        Column(modifier = Modifier.fillMaxWidth()) {
+            ExpressiveSectionHeader(
+                title = stringResource(R.string.settings_drawer_menu_items),
+                action = {
+                    TextButton(
+                        onClick = onAddDrawerMenuActionClick,
+                        enabled = canAddMore,
+                        modifier = Modifier.testTag("settings_add_drawer_menu_action"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = stringResource(R.string.settings_drawer_menu_add))
+                    }
+                },
+            )
+
+            if (actions.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.settings_drawer_menu_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    actions.forEachIndexed { idx, action ->
+                        val label = homeGestureActionLabel(
+                            action = action,
+                            appsByKey = uiState.appsByKey,
+                            shortcutsByTargetKey = uiState.shortcutsByTargetKey,
+                        )
+                        SegmentedListItem(
+                            onClick = {},
+                            shapes = ListItemDefaults.segmentedShapes(index = idx, count = actions.size),
+                            colors = segmentedColors,
+                            leadingContent = {
+                                HomeGestureActionIcon(
+                                    action = action,
+                                    appsByKey = uiState.appsByKey,
+                                    shortcutsByTargetKey = uiState.shortcutsByTargetKey,
+                                    size = 24.dp,
+                                )
+                            },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (actions.size > 1) {
+                                        IconButton(
+                                            onClick = { onMoveDrawerMenuAction(idx, -1) },
+                                            enabled = idx > 0,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.KeyboardArrowUp,
+                                                contentDescription = stringResource(R.string.cd_move_up),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { onMoveDrawerMenuAction(idx, 1) },
+                                            enabled = idx < actions.lastIndex,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.KeyboardArrowDown,
+                                                contentDescription = stringResource(R.string.cd_move_down),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { onRemoveDrawerMenuAction(idx) },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.cd_remove_item),
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                }
+                            },
+                            modifier = Modifier.testTag("settings_drawer_menu_action_$idx"),
+                            content = {
+                                Text(
+                                    text = label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
+                    }
+                }
             }
         }
     }

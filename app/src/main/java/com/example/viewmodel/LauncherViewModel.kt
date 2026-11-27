@@ -1189,6 +1189,28 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addDrawerMenuAction(action: HomeGestureAction) {
+        viewModelScope.launch {
+            prefsRepository.addDrawerMenuAction(action)
+        }
+    }
+
+    fun removeDrawerMenuAction(index: Int) {
+        viewModelScope.launch {
+            prefsRepository.removeDrawerMenuAction(index)
+        }
+    }
+
+    fun moveDrawerMenuAction(index: Int, delta: Int) {
+        viewModelScope.launch {
+            prefsRepository.moveDrawerMenuAction(index, delta)
+        }
+    }
+
+    fun executeDrawerMenuAction(action: HomeGestureAction) {
+        executeHomeAction(action, haptic = true)
+    }
+
     fun setDrawerTabHidden(tabId: String, hidden: Boolean) {
         viewModelScope.launch {
             val ok = prefsRepository.setDrawerTabHidden(tabId, hidden)

@@ -116,6 +116,13 @@
 
     <string name="settings_drawer_section">应用抽屉</string>
     <string name="settings_drawer_columns">每行列数</string>
+    <string name="settings_drawer_menu_items">抽屉菜单项</string>
+    <string name="settings_drawer_menu_add">添加</string>
+    <string name="settings_drawer_menu_picker_title">添加菜单项</string>
+    <string name="settings_drawer_menu_empty">可向抽屉右上角菜单添加系统动作、应用或快捷方式。</string>
+    <string name="cd_move_up">上移</string>
+    <string name="cd_move_down">下移</string>
+    <string name="cd_remove_item">移除</string>
     <string name="settings_drawer_tabs">抽屉标签页</string>
     <string name="settings_drawer_tabs_empty">暂无自定义标签页，可新建标签页对应用分组</string>
     <string name="drawer_tab_all">全部</string>

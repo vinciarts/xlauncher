@@ -140,6 +140,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         val AUTO_HIDE_EMPTY_DRAWER_TABS = booleanPreferencesKey("drawer_auto_hide_empty_tabs")
         val DRAWER_BOTTOM_ALIGNED = booleanPreferencesKey("drawer_bottom_aligned")
         val FOLDED_DRAWER_APP_KEYS = stringPreferencesKey("drawer_folded_app_keys")
+        val DRAWER_MENU_ACTIONS = stringPreferencesKey("drawer_menu_actions")
         val HAS_SEEDED_DEFAULTS = booleanPreferencesKey("has_seeded_defaults")
         val SEARCH_SHORTCUTS_ENABLED = booleanPreferencesKey("search_shortcuts_enabled")
         val SEARCH_CONTACTS_ENABLED = booleanPreferencesKey("search_contacts_enabled")
@@ -184,6 +185,11 @@ class LauncherPreferencesRepository(private val context: Context) {
             autoHideEmptyDrawerTabs = prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] ?: false,
             drawerBottomAligned = prefs[Keys.DRAWER_BOTTOM_ALIGNED] ?: false,
             foldedDrawerAppKeys = decodeEncodedList(prefs[Keys.FOLDED_DRAWER_APP_KEYS]).toImmutableSet(),
+            drawerMenuActions = decodeEncodedList(prefs[Keys.DRAWER_MENU_ACTIONS])
+                .map { HomeGestureAction.decode(it) }
+                .filter { it != HomeGestureAction.None }
+                .take(MAX_DRAWER_MENU_ACTIONS)
+                .toImmutableList(),
             hasSeededDefaults = prefs[Keys.HAS_SEEDED_DEFAULTS] ?: false,
             searchShortcutsEnabled = prefs[Keys.SEARCH_SHORTCUTS_ENABLED] ?: false,
             searchContactsEnabled = prefs[Keys.SEARCH_CONTACTS_ENABLED] ?: false,
@@ -1081,6 +1087,40 @@ class LauncherPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun addDrawerMenuAction(action: HomeGestureAction) {
+        if (action == HomeGestureAction.None) return
+        val encoded = action.encode()
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeEncodedList(prefs[Keys.DRAWER_MENU_ACTIONS]).toMutableList()
+            if (encoded !in current && current.size < MAX_DRAWER_MENU_ACTIONS) {
+                current.add(encoded)
+                prefs[Keys.DRAWER_MENU_ACTIONS] = encodeEncodedList(current)
+            }
+        }
+    }
+
+    suspend fun removeDrawerMenuAction(index: Int) {
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeEncodedList(prefs[Keys.DRAWER_MENU_ACTIONS]).toMutableList()
+            if (index in current.indices) {
+                current.removeAt(index)
+                prefs[Keys.DRAWER_MENU_ACTIONS] = encodeEncodedList(current)
+            }
+        }
+    }
+
+    suspend fun moveDrawerMenuAction(index: Int, delta: Int) {
+        context.launcherDataStore.edit { prefs ->
+            val current = decodeEncodedList(prefs[Keys.DRAWER_MENU_ACTIONS]).toMutableList()
+            val target = index + delta
+            if (index in current.indices && target in current.indices && index != target) {
+                val item = current.removeAt(index)
+                current.add(target, item)
+                prefs[Keys.DRAWER_MENU_ACTIONS] = encodeEncodedList(current)
+            }
+        }
+    }
+
     suspend fun setDrawerTabHidden(tabId: String, hidden: Boolean): Boolean {
         var applied = true
         context.launcherDataStore.edit { prefs ->
@@ -1432,6 +1472,9 @@ class LauncherPreferencesRepository(private val context: Context) {
             prefs[Keys.AUTO_HIDE_EMPTY_DRAWER_TABS] = restored.autoHideEmptyDrawerTabs
             prefs[Keys.DRAWER_BOTTOM_ALIGNED] = restored.drawerBottomAligned
             prefs[Keys.FOLDED_DRAWER_APP_KEYS] = encodeEncodedList(restored.foldedDrawerAppKeys)
+            prefs[Keys.DRAWER_MENU_ACTIONS] = encodeEncodedList(
+                restored.drawerMenuActions.filter { it != HomeGestureAction.None }.map { it.encode() }
+            )
             prefs[Keys.HAS_SEEDED_DEFAULTS] = true
 
             prefs[Keys.SEARCH_SHORTCUTS_ENABLED] = restored.searchShortcutsEnabled
@@ -1580,6 +1623,7 @@ class LauncherPreferencesRepository(private val context: Context) {
         const val MAX_DOCK_ITEMS = 8
         const val MAX_HOME_PAGES = 7
         const val MAX_DRAWER_TABS = 12
+        const val MAX_DRAWER_MENU_ACTIONS = 10
         private const val PAGE_SEP = ";"
         private const val ITEM_SEP = ","
         private const val KV_SEP = ":"

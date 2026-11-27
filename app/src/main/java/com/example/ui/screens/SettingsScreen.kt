@@ -89,6 +89,9 @@ fun SettingsScreen(
     onSetDrawerColumns: (Int) -> Unit,
     onSetDrawerBottomAligned: (Boolean) -> Unit,
     onSetAutoHideEmptyDrawerTabs: (Boolean) -> Unit,
+    onAddDrawerMenuAction: (HomeGestureAction) -> Unit,
+    onRemoveDrawerMenuAction: (Int) -> Unit,
+    onMoveDrawerMenuAction: (Int, Int) -> Unit,
     onCreateDrawerTab: (String, List<String>) -> Unit,
     onRenameDrawerTab: (String, String) -> Unit,
     onSetDrawerTabApps: (String, Set<String>) -> Unit,
@@ -115,6 +118,7 @@ fun SettingsScreen(
     val settings = uiState.settings
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var editingActionTrigger by remember { mutableStateOf<HomeActionTrigger?>(null) }
+    var showDrawerMenuActionPicker by remember { mutableStateOf(false) }
     var showCreateTabDialog by remember { mutableStateOf(false) }
     var editingTabId by remember { mutableStateOf<String?>(null) }
     var showSearchFoldersDialog by remember { mutableStateOf(false) }
@@ -263,6 +267,9 @@ fun SettingsScreen(
                             onSetDrawerColumns = onSetDrawerColumns,
                             onSetDrawerBottomAligned = onSetDrawerBottomAligned,
                             onSetAutoHideEmptyDrawerTabs = onSetAutoHideEmptyDrawerTabs,
+                            onAddDrawerMenuActionClick = { showDrawerMenuActionPicker = true },
+                            onRemoveDrawerMenuAction = onRemoveDrawerMenuAction,
+                            onMoveDrawerMenuAction = onMoveDrawerMenuAction,
                             onSetAllTabHidden = onSetAllTabHidden,
                             onSetDrawerTabHidden = onSetDrawerTabHidden,
                             onOpenCreateTabDialog = { showCreateTabDialog = true },
@@ -323,6 +330,24 @@ fun SettingsScreen(
             },
             onDismiss = { editingActionTrigger = null },
             direction = direction,
+        )
+    }
+
+    if (showDrawerMenuActionPicker) {
+        val menuTitle = stringResource(R.string.settings_drawer_menu_items)
+        HomeGesturePickerSheet(
+            triggerLabel = menuTitle,
+            currentAction = HomeGestureAction.None,
+            allApps = uiState.allApps,
+            allShortcuts = uiState.allShortcuts,
+            hasShortcutHostPermission = uiState.hasShortcutHostPermission,
+            onOpenDefaultHomeSettings = onOpenDefaultHomeSettings,
+            onSelectAction = { action ->
+                onAddDrawerMenuAction(action)
+            },
+            onDismiss = { showDrawerMenuActionPicker = false },
+            includeLauncherActions = false,
+            titleOverride = stringResource(R.string.settings_drawer_menu_picker_title),
         )
     }
 

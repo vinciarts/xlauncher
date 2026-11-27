@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,9 +16,25 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FlashlightOn
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,9 +56,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.model.AppItem
@@ -390,6 +409,81 @@ fun homeGestureActionLabel(
     }
 }
 
+@Composable
+fun HomeGestureActionIcon(
+    action: HomeGestureAction,
+    appsByKey: Map<String, AppItem>,
+    shortcutsByTargetKey: Map<String, AppShortcutItem>,
+    size: Dp = 22.dp,
+) {
+    when (action) {
+        is HomeGestureAction.LaunchApp -> {
+            val app = appsByKey[action.componentKey]
+            if (app != null) {
+                AppIconImage(app = app, size = size)
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.Apps,
+                    contentDescription = null,
+                    modifier = Modifier.size(size),
+                )
+            }
+        }
+        is HomeGestureAction.LaunchShortcut -> {
+            val shortcut = shortcutsByTargetKey[action.encode()]
+            val iconBmp = shortcut?.icon ?: shortcut?.let { sc ->
+                appsByKey.values.firstOrNull { it.packageName == sc.packageName }?.icon
+            }
+            if (iconBmp != null) {
+                Image(
+                    bitmap = iconBmp,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(size),
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = null,
+                    modifier = Modifier.size(size),
+                )
+            }
+        }
+        else -> {
+            val vector = when (action) {
+                HomeGestureAction.OpenDrawer -> Icons.Rounded.Apps
+                HomeGestureAction.OpenSearch -> Icons.Rounded.Search
+                HomeGestureAction.OpenSettings -> Icons.Rounded.Settings
+                HomeGestureAction.GoFirstPage,
+                HomeGestureAction.PrevHomePage,
+                HomeGestureAction.NextHomePage,
+                HomeGestureAction.None,
+                -> Icons.Rounded.Home
+                HomeGestureAction.ExpandNotifications -> Icons.Rounded.Notifications
+                HomeGestureAction.ExpandQuickSettings -> Icons.Rounded.Tune
+                HomeGestureAction.ToggleFlashlight -> Icons.Rounded.FlashlightOn
+                HomeGestureAction.OpenVolumePanel -> Icons.AutoMirrored.Rounded.VolumeUp
+                HomeGestureAction.ToggleVibrateMode -> Icons.Rounded.Vibration
+                HomeGestureAction.OpenVoiceAssist -> Icons.Rounded.Mic
+                HomeGestureAction.OpenCamera -> Icons.Rounded.PhotoCamera
+                HomeGestureAction.OpenDialer -> Icons.Rounded.Call
+                HomeGestureAction.OpenSystemSettings -> Icons.Rounded.Settings
+                HomeGestureAction.OpenWifiPanel -> Icons.Rounded.Wifi
+                HomeGestureAction.OpenBluetoothSettings -> Icons.Rounded.Bluetooth
+                HomeGestureAction.OpenWallpaperPicker -> Icons.Rounded.Wallpaper
+                is HomeGestureAction.LaunchApp,
+                is HomeGestureAction.LaunchShortcut,
+                -> Icons.Rounded.Apps
+            }
+            Icon(
+                imageVector = vector,
+                contentDescription = null,
+                modifier = Modifier.size(size),
+            )
+        }
+    }
+}
+
 private enum class HomeGesturePickerMode {
     ACTIONS,
     PICK_APP,
@@ -408,6 +502,8 @@ fun HomeGesturePickerSheet(
     onSelectAction: (HomeGestureAction) -> Unit,
     onDismiss: () -> Unit,
     direction: SwipeDirection? = null,
+    includeLauncherActions: Boolean = true,
+    titleOverride: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var mode by remember { mutableStateOf(HomeGesturePickerMode.ACTIONS) }
@@ -429,7 +525,7 @@ fun HomeGesturePickerSheet(
             when (mode) {
                 HomeGesturePickerMode.ACTIONS -> {
                     Text(
-                        text = stringResource(R.string.home_gesture_picker_title, triggerLabel),
+                        text = titleOverride ?: stringResource(R.string.home_gesture_picker_title, triggerLabel),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -447,46 +543,48 @@ fun HomeGesturePickerSheet(
                             .heightIn(max = 460.dp)
                             .verticalFadingEdge(listState),
                     ) {
-                        item(key = "group_launcher") {
-                            ExpressiveSectionHeader(title = stringResource(R.string.home_gesture_group_launcher))
-                        }
-                        itemsIndexed(
-                            items = launcherActions,
-                            key = { _, action -> action.encode() },
-                        ) { index, action ->
-                            val selected = currentAction == action
-                            val label = homeGestureActionLabel(
-                                action = action,
-                                appsByKey = emptyMap(),
-                                shortcutsByTargetKey = emptyMap(),
-                                direction = direction,
-                            )
-                            SegmentedListItem(
-                                selected = selected,
-                                onClick = {
-                                    onSelectAction(action)
-                                    onDismiss()
-                                },
-                                shapes = ListItemDefaults.segmentedShapes(index = index, count = launcherActions.size),
-                                colors = sheetSegmentedColors,
-                                trailingContent = if (selected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                content = { Text(text = label) },
-                            )
+                        if (includeLauncherActions) {
+                            item(key = "group_launcher") {
+                                ExpressiveSectionHeader(title = stringResource(R.string.home_gesture_group_launcher))
+                            }
+                            itemsIndexed(
+                                items = launcherActions,
+                                key = { _, action -> action.encode() },
+                            ) { index, action ->
+                                val selected = currentAction == action
+                                val label = homeGestureActionLabel(
+                                    action = action,
+                                    appsByKey = emptyMap(),
+                                    shortcutsByTargetKey = emptyMap(),
+                                    direction = direction,
+                                )
+                                SegmentedListItem(
+                                    selected = selected,
+                                    onClick = {
+                                        onSelectAction(action)
+                                        onDismiss()
+                                    },
+                                    shapes = ListItemDefaults.segmentedShapes(index = index, count = launcherActions.size),
+                                    colors = sheetSegmentedColors,
+                                    trailingContent = if (selected) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                    content = { Text(text = label) },
+                                )
+                            }
                         }
 
                         item(key = "group_system") {
                             ExpressiveSectionHeader(
                                 title = stringResource(R.string.home_gesture_group_system),
-                                modifier = Modifier.padding(top = 8.dp),
+                                modifier = Modifier.padding(top = if (includeLauncherActions) 8.dp else 0.dp),
                             )
                         }
                         itemsIndexed(

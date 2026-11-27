@@ -376,6 +376,7 @@ data class LauncherSettings(
     val autoHideEmptyDrawerTabs: Boolean = false,
     val drawerBottomAligned: Boolean = false,
     val foldedDrawerAppKeys: ImmutableSet<String> = persistentSetOf(),
+    val drawerMenuActions: ImmutableList<HomeGestureAction> = persistentListOf(),
     val hasSeededDefaults: Boolean = false,
     // Opt-in Universal Search sources (local sources off by default; web search enabled by default)
     val searchShortcutsEnabled: Boolean = false,

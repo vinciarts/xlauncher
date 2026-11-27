@@ -116,6 +116,13 @@
 
     <string name="settings_drawer_section">App drawer</string>
     <string name="settings_drawer_columns">Columns</string>
+    <string name="settings_drawer_menu_items">Drawer menu</string>
+    <string name="settings_drawer_menu_add">Add</string>
+    <string name="settings_drawer_menu_picker_title">Add menu item</string>
+    <string name="settings_drawer_menu_empty">Add quick actions, apps, or shortcuts to the drawer menu.</string>
+    <string name="cd_move_up">Move up</string>
+    <string name="cd_move_down">Move down</string>
+    <string name="cd_remove_item">Remove</string>
     <string name="settings_drawer_tabs">Tabs</string>
     <string name="settings_drawer_tabs_empty">No custom tabs yet. Create tabs to group apps in the drawer.</string>
     <string name="drawer_tab_all">All</string>

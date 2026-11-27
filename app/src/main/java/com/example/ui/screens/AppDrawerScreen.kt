@@ -116,10 +116,15 @@ import com.example.ui.components.EditDrawerTabDialog
 import com.example.ui.components.ExpressiveMenuGroupsContent
 import com.example.ui.components.ExpressiveMenuItemSpec
 import com.example.ui.components.ExpressiveSearchField
+import com.example.ui.components.HomeGestureActionIcon
+import com.example.ui.components.homeGestureActionLabel
 import com.example.ui.components.verticalFadingEdge
+import com.example.model.HomeGestureAction
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
@@ -138,6 +143,10 @@ fun AppDrawerScreen(
     isAllTabHidden: Boolean = false,
     allTabName: String = "",
     foldedAppKeys: ImmutableSet<String> = persistentSetOf(),
+    appsByKey: ImmutableMap<String, AppItem> = persistentMapOf(),
+    shortcutsByTargetKey: ImmutableMap<String, AppShortcutItem> = persistentMapOf(),
+    drawerMenuActions: ImmutableList<HomeGestureAction> = persistentListOf(),
+    onExecuteDrawerMenuAction: (HomeGestureAction) -> Unit = {},
     filteredDrawerApps: ImmutableList<AppItem>,
     hasAnyExtraSearchEnabled: Boolean,
     matchedShortcuts: ImmutableList<AppShortcutItem>,
@@ -621,42 +630,80 @@ fun AppDrawerScreen(
                                 expanded = showDrawerMenu,
                                 onDismissRequest = { showDrawerMenu = false },
                             ) {
-                                ExpressiveMenuGroupsContent(
-                                    groups = listOf(
-                                        listOf(
-                                            ExpressiveMenuItemSpec(
-                                                text = { Text(stringResource(R.string.drawer_menu_edit_drawer)) },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Edit,
-                                                        contentDescription = null,
-                                                    )
-                                                },
-                                                testTag = "drawer_menu_edit_item",
-                                                onClick = {
-                                                    showDrawerMenu = false
-                                                    onSearchQueryChange("")
-                                                    focusManager.clearFocus(force = true)
-                                                    keyboardController?.hide()
-                                                    isEditMode = true
-                                                },
-                                            ),
-                                            ExpressiveMenuItemSpec(
-                                                text = { Text(stringResource(R.string.settings_title)) },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Settings,
-                                                        contentDescription = null,
-                                                    )
-                                                },
-                                                testTag = "drawer_menu_settings_item",
-                                                onClick = {
-                                                    showDrawerMenu = false
-                                                    onOpenSettings()
-                                                },
-                                            ),
-                                        )
+                                val customMenuItems = drawerMenuActions.mapIndexedNotNull { idx, action ->
+                                    if (action == HomeGestureAction.None) return@mapIndexedNotNull null
+                                    if (action is HomeGestureAction.LaunchApp && action.componentKey !in appsByKey) {
+                                        return@mapIndexedNotNull null
+                                    }
+                                    val label = homeGestureActionLabel(
+                                        action = action,
+                                        appsByKey = appsByKey,
+                                        shortcutsByTargetKey = shortcutsByTargetKey,
+                                    )
+                                    ExpressiveMenuItemSpec(
+                                        text = {
+                                            Text(
+                                                text = label,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            HomeGestureActionIcon(
+                                                action = action,
+                                                appsByKey = appsByKey,
+                                                shortcutsByTargetKey = shortcutsByTargetKey,
+                                                size = 22.dp,
+                                            )
+                                        },
+                                        testTag = "drawer_menu_custom_item_$idx",
+                                        onClick = {
+                                            showDrawerMenu = false
+                                            focusManager.clearFocus(force = true)
+                                            keyboardController?.hide()
+                                            onExecuteDrawerMenuAction(action)
+                                        },
+                                    )
+                                }
+                                val builtInMenuItems = listOf(
+                                    ExpressiveMenuItemSpec(
+                                        text = { Text(stringResource(R.string.drawer_menu_edit_drawer)) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Edit,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        testTag = "drawer_menu_edit_item",
+                                        onClick = {
+                                            showDrawerMenu = false
+                                            onSearchQueryChange("")
+                                            focusManager.clearFocus(force = true)
+                                            keyboardController?.hide()
+                                            isEditMode = true
+                                        },
                                     ),
+                                    ExpressiveMenuItemSpec(
+                                        text = { Text(stringResource(R.string.settings_title)) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Settings,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        testTag = "drawer_menu_settings_item",
+                                        onClick = {
+                                            showDrawerMenu = false
+                                            onOpenSettings()
+                                        },
+                                    ),
+                                )
+                                val menuGroups = buildList {
+                                    if (customMenuItems.isNotEmpty()) add(customMenuItems)
+                                    add(builtInMenuItems)
+                                }
+                                ExpressiveMenuGroupsContent(
+                                    groups = menuGroups,
                                     parentExpanded = showDrawerMenu,
                                 )
                             }
